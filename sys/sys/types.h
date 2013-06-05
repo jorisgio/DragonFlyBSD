@@ -87,6 +87,7 @@ typedef __int64_t	blksize_t;	/* block size */
 typedef	char *		caddr_t;	/* core address */
 typedef	const char *	c_caddr_t;	/* core address, pointer to const */
 typedef	volatile char *	v_caddr_t;	/* core address, pointer to volatile */
+typedef __uint64_t	cap_rights_t;	/* capability rights */
 typedef	__int32_t	daddr_t;	/* disk address */
 typedef	__uint32_t	u_daddr_t;	/* unsigned disk address */
 typedef	__uint32_t	fixpt_t;	/* fixed point number */

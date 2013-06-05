@@ -1,13 +1,13 @@
 /*
  * Copyright (c) 2005 The DragonFly Project.  All rights reserved.
- * 
+ *
  * This code is derived from software contributed to The DragonFly Project
  * by Jeffrey Hsu.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
@@ -17,7 +17,7 @@
  * 3. Neither the name of The DragonFly Project nor the names of its
  *    contributors may be used to endorse or promote products derived
  *    from this software without specific, prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
@@ -68,7 +68,9 @@
  * $FreeBSD: src/sys/kern/kern_descrip.c,v 1.81.2.19 2004/02/28 00:43:31 tegge Exp $
  */
 
+#include "opt_capsicum.h"
 #include "opt_compat.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
@@ -92,6 +94,7 @@
 #include <sys/kcore.h>
 #include <sys/kinfo.h>
 #include <sys/un.h>
+#include <sys/capability.h>
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -100,16 +103,25 @@
 #include <sys/file2.h>
 #include <sys/spinlock2.h>
 
-static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd);
+#ifdef CAPABILITIES
+#include <sys/capability.h>
+#endif
+
+static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
+void fsetfd_capcheck(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
 static void fdreserve_locked (struct filedesc *fdp, int fd0, int incr);
-static struct file *funsetfd_locked (struct filedesc *fdp, int fd);
+static struct file *funsetfd_locked (struct filedesc *fdp, int fd, struct ioctls_list **tofree);
 static void ffree(struct file *fp);
+int holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag,
+	cap_rights_t needrights, int needfcntl);
+static struct file *getfp_locked(struct filedesc *fdp, int fd);
 
 static MALLOC_DEFINE(M_FILEDESC, "file desc", "Open file descriptor table");
 static MALLOC_DEFINE(M_FILEDESC_TO_LEADER, "file desc to leader",
 		     "file desc to leader structures");
 MALLOC_DEFINE(M_FILE, "file", "Open file structure");
 static MALLOC_DEFINE(M_SIGIO, "sigio", "sigio structures");
+MALLOC_DEFINE(M_FILECAPS, "filecaps", "descriptor capabilities");
 
 static struct krate krate_uidinfo = { .freq = 1 };
 
@@ -128,7 +140,168 @@ static struct dev_ops fildesc_ops = {
 static struct filelist filehead = LIST_HEAD_INITIALIZER(&filehead);
 static struct spinlock filehead_spin = SPINLOCK_INITIALIZER(&filehead_spin);
 static int nfiles;		/* actual number of open files */
-extern int cmask;	
+extern int cmask;
+
+#ifdef CAPABILITIES
+/*
+ * Capabilities managment.
+ */
+void filecaps_init(struct filecaps *fcaps);
+void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
+ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
+struct ioctls_list *filecaps_free(struct filecaps *fcaps);
+void filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst);
+void filecaps_free_unlocked(struct filecaps *fcaps);
+void filecaps_move(struct filecaps *src, struct filecaps *dst);
+static void filecaps_validate(const struct filecaps *fcaps, const char *func);
+static void filecaps_fill(struct filecaps *fcaps);
+/*
+ * Initialize filecaps structure.
+ */
+void
+filecaps_init(struct filecaps *fcaps)
+{
+
+	bzero(fcaps, sizeof(*fcaps));
+	fcaps->fc_nioctls = -1;
+}
+
+/*
+ * Copy a filecaps structure, the spinlock of the source fdp
+ * must be hrold shared, and the dest spinlock must be holdexclusive
+ */
+void
+filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst)
+{
+
+	*dst = *src;
+  if (src->fc_ioctls != NULL) {
+		KASSERT(src->fc_nioctls > 0,
+				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
+    refcount_acquire(&dst->fc_ioctls->ref);
+  }
+}
+
+
+/*
+ * src spinlock must be hold shared, dst spinlock must be hold exclusive.
+ * fc_ioctls needs to be already allocated.
+ * Returns 0 if the copy succeded
+ * or the difference of the space provided and the space needed
+ */
+ssize_t
+filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
+{
+	ssize_t oldsize, newsize;
+
+	*dst = *src;
+	if (src->fc_ioctls != NULL) {
+		KASSERT(src->fc_nioctls > 0,
+				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
+
+		oldsize = (sizeof (struct ioctls_list)) + (sizeof (u_long)) * (src->fc_nioctls - 1);
+		newsize =  sizeof (dst->fc_ioctls);
+		if ((oldsize - newsize) != 0)
+			return oldsize - newsize;
+
+		bcopy(src->fc_ioctls, dst->fc_ioctls, oldsize);
+		refcount_init(&dst->fc_ioctls->ref, 1);
+	}
+	return 0;
+}
+
+/*
+ * Alloc space for fc_ioctls
+ */
+void
+filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst)
+{
+  size_t size;
+
+  spin_lock_shared(&fp->fd_spin);
+  size = sizeof(fp->fd_files[src].fcaps.fc_ioctls[0]) * fp->fd_files[src].fcaps.fc_nioctls;
+  spin_unlock_shared(&fp->fd_spin);
+  dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
+}
+
+/*
+ * drop reference on the ioctl list. Spinlock must be hold exclusive
+ * returns NULL if the list is still shared,
+ * or a pointer to this list if it needs to be freed.
+ */
+struct ioctls_list *
+filecaps_free(struct filecaps *fcaps)
+{
+  struct ioctls_list *rt;
+
+  if( (rt = fcaps->fc_ioctls) != NULL) {
+    if(refcount_release(&rt->ref) == 0)
+      rt = NULL;
+  }
+  bzero(fcaps, sizeof(struct filecaps));
+  return rt;
+}
+
+
+/*
+ * drop reference on the ioctl list.
+ */
+void
+filecaps_free_unlocked(struct filecaps *fcaps)
+{
+  if(fcaps->fc_ioctls != NULL) {
+    if(refcount_release(&fcaps->fc_ioctls->ref) != 0)
+      kfree(&fcaps->fc_ioctls->ref, M_FILECAPS);
+  }
+  bzero(fcaps, sizeof(struct filecaps));
+}
+
+/*
+ * Move filecaps structure to the new place and clear the old place.
+ */
+void
+filecaps_move(struct filecaps *src, struct filecaps *dst)
+{
+
+	*dst = *src;
+	bzero(src, sizeof(*src));
+}
+
+/*
+ * Fill the given filecaps structure with full rights.
+ */
+static void
+filecaps_fill(struct filecaps *fcaps)
+{
+
+	fcaps->fc_rights = CAP_ALL;
+	fcaps->fc_ioctls = NULL;
+	fcaps->fc_nioctls = -1;
+	fcaps->fc_fcntls = CAP_FCNTL_ALL;
+}
+
+
+/*
+ * Validate the given filecaps structure.
+ */
+static void
+filecaps_validate(const struct filecaps *fcaps, const char *func)
+{
+
+	KASSERT((fcaps->fc_rights & ~CAP_MASK_VALID) == 0,
+			("%s: invalid rights", func));
+	KASSERT((fcaps->fc_fcntls & ~CAP_FCNTL_ALL) == 0,
+			("%s: invalid fcntls", func));
+	KASSERT(fcaps->fc_fcntls == 0 || (fcaps->fc_rights & CAP_FCNTL) != 0,
+			("%s: fcntls without CAP_FCNTL", func));
+	KASSERT(fcaps->fc_ioctls != NULL ? fcaps->fc_nioctls > 0 :
+			(fcaps->fc_nioctls == -1 || fcaps->fc_nioctls == 0),
+			("%s: invalid ioctls", func));
+	KASSERT(fcaps->fc_nioctls == 0 || (fcaps->fc_rights & CAP_IOCTL) != 0,
+			("%s: ioctls without CAP_IOCTL", func));
+}
+
+#endif // CAPABILITIES
 
 /*
  * Fixup fd_freefile and fd_lastfile after a descriptor has been cleared.
@@ -156,7 +329,7 @@ fdfixup_locked(struct filedesc *fdp, int fd)
  * MPSAFE
  */
 int
-sys_getdtablesize(struct getdtablesize_args *uap) 
+sys_getdtablesize(struct getdtablesize_args *uap)
 {
 	struct proc *p = curproc;
 	struct plimit *limit = p->p_limit;
@@ -494,6 +667,7 @@ kern_dup(int flags, int old, int new, int *res)
 	struct filedesc *fdp = p->p_fd;
 	struct file *fp;
 	struct file *delfp;
+	struct filecaps oldcaps;
 	int oldflags;
 	int holdleaders;
 	int dtsize;
@@ -515,23 +689,34 @@ retry:
 	if (dtsize < minfilesperproc)
 		dtsize = minfilesperproc;
 
-	if (new < 0 || new > dtsize)
-		return (EINVAL);
+	if (new < 0 || new > dtsize) {
+		error = EINVAL;
+		goto done;
+	}
 
 	spin_lock(&fdp->fd_spin);
 	if ((unsigned)old >= fdp->fd_nfiles || fdp->fd_files[old].fp == NULL) {
 		spin_unlock(&fdp->fd_spin);
-		return (EBADF);
+		error = EBADF;
+		goto done;
 	}
 	if ((flags & DUP_FIXED) && old == new) {
 		*res = new;
 		if (flags & DUP_CLOEXEC)
 			fdp->fd_files[new].fileflags |= UF_EXCLOSE;
 		spin_unlock(&fdp->fd_spin);
-		return (0);
+		error = 0;
+		goto done;
 	}
 	fp = fdp->fd_files[old].fp;
 	oldflags = fdp->fd_files[old].fileflags;
+
+#ifdef CAPABILITIES
+	filecaps_shallow_copy(&fdp->fd_files[old].fcaps, &oldcaps);
+#else
+	bzero(&oldcaps, sizeof (struct filecaps));
+#endif
+
 	fhold(fp);	/* MPSAFE - can be called with a spinlock held */
 
 	/*
@@ -552,24 +737,31 @@ retry:
 		if (error) {
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
-			return (error);
+			goto done;
+
 		}
 		/*
 		 * Check for ripout
 		 */
 		if (old >= fdp->fd_nfiles || fdp->fd_files[old].fp != fp) {
-			fsetfd_locked(fdp, NULL, newfd);
+			fsetfd_locked(fdp, NULL, newfd, NULL);
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
+#ifdef CAPABILITIES
+			filecaps_free_unlocked(&oldcaps);
+#endif
 			goto retry;
 		}
 		/*
 		 * Check for expansion race
 		 */
 		if ((flags & DUP_VARIABLE) == 0 && new != newfd) {
-			fsetfd_locked(fdp, NULL, newfd);
+			fsetfd_locked(fdp, NULL, newfd, NULL);
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
+#ifdef CAPABILITIES
+			filecaps_free_unlocked(&oldcaps);
+#endif
 			goto retry;
 		}
 		/*
@@ -577,9 +769,12 @@ retry:
 		 * can't occur).
 		 */
 		if (old == newfd) {
-			fsetfd_locked(fdp, NULL, newfd);
+			fsetfd_locked(fdp, NULL, newfd, NULL);
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
+#ifdef CAPABILITIES
+			filecaps_free_unlocked(&oldcaps);
+#endif
 			goto retry;
 		}
 		new = newfd;
@@ -590,13 +785,16 @@ retry:
 			fdrop(fp);
 			kprintf("Warning: dup(): target descriptor %d is reserved, waiting for it to be resolved\n", new);
 			tsleep(fdp, 0, "fdres", hz);
+#ifdef CAPABILITIES
+			filecaps_free_unlocked(&oldcaps);
+#endif
 			goto retry;
 		}
 
 		/*
 		 * If the target descriptor was never allocated we have
 		 * to allocate it.  If it was we have to clean out the
-		 * old descriptor.  delfp inherits the ref from the 
+		 * old descriptor.  delfp inherits the ref from the
 		 * descriptor table.
 		 */
 		delfp = fdp->fd_files[new].fp;
@@ -615,7 +813,7 @@ retry:
 	 */
 
 	/*
-	 * If a descriptor is being overwritten we may hve to tell 
+	 * If a descriptor is being overwritten we may hve to tell
 	 * fdfree() to sleep to ensure that all relevant process
 	 * leaders can be traversed in closef().
 	 */
@@ -635,7 +833,11 @@ retry:
 	 *
 	 * The fd_files[] array inherits fp's hold reference.
 	 */
-	fsetfd_locked(fdp, fp, new);
+#ifdef CAPABILITIES
+	fsetfd_locked(fdp, fp, new, &oldcaps);
+#else
+	fsetfd_locked(fdp, fp, new, NULL);
+#endif
 	if ((flags & DUP_CLOEXEC) != 0)
 		fdp->fd_files[new].fileflags = oldflags | UF_EXCLOSE;
 	else
@@ -666,7 +868,14 @@ retry:
 			}
 		}
 	}
-	return (0);
+  error = 0;
+done:
+#ifdef CAPABILITIES
+	if (error != 0) {
+		filecaps_free_unlocked(&oldcaps);
+	}
+#endif // CAPABILITIES
+	return (error);
 }
 
 /*
@@ -874,7 +1083,7 @@ kern_closefrom(int fd)
 
 	/*
 	 * NOTE: This function will skip unassociated descriptors and
-	 * reserved descriptors that have not yet been assigned.  
+	 * reserved descriptors that have not yet been assigned.
 	 * fd_lastfile can change as a side effect of kern_close().
 	 */
 	spin_lock(&fdp->fd_spin);
@@ -913,6 +1122,7 @@ kern_close(int fd)
 	struct proc *p = td->td_proc;
 	struct filedesc *fdp;
 	struct file *fp;
+	struct ioctls_list *tofree;
 	int error;
 	int holdleaders;
 
@@ -920,7 +1130,7 @@ kern_close(int fd)
 	fdp = p->p_fd;
 
 	spin_lock(&fdp->fd_spin);
-	if ((fp = funsetfd_locked(fdp, fd)) == NULL) {
+	if ((fp = funsetfd_locked(fdp, fd, &tofree)) == NULL) {
 		spin_unlock(&fdp->fd_spin);
 		return (EBADF);
 	}
@@ -954,6 +1164,10 @@ kern_close(int fd)
 			spin_unlock(&fdp->fd_spin);
 		}
 	}
+#ifdef CAPABILITIES
+	if ( tofree != NULL)
+		kfree(tofree, M_FILEDESC);
+#endif
 	return (error);
 }
 
@@ -1606,14 +1820,25 @@ checkfdclosed(struct filedesc *fdp, int fd, struct file *fp)
  * MPSAFE (exclusive spinlock must be held on call)
  */
 static void
-fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd)
+fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps)
 {
+	KKASSERT(fp != NULL);
 	KKASSERT((unsigned)fd < fdp->fd_nfiles);
 	KKASSERT(fdp->fd_files[fd].reserved != 0);
 	if (fp) {
+#ifdef CAPABILITIES
+		if (fcaps != NULL)
+			filecaps_validate(fcaps, __func__);
+#endif
 		fhold(fp);
 		fdp->fd_files[fd].fp = fp;
 		fdp->fd_files[fd].reserved = 0;
+#ifdef CAPABILITIES
+		if (fcaps != NULL)
+			filecaps_move(fcaps, &fdp->fd_files[fd].fcaps);
+		else
+			filecaps_fill(&fdp->fd_files[fd].fcaps);
+#endif
 	} else {
 		fdp->fd_files[fd].reserved = 0;
 		fdreserve_locked(fdp, fd, -1);
@@ -1625,19 +1850,29 @@ fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd)
  * MPSAFE
  */
 void
-fsetfd(struct filedesc *fdp, struct file *fp, int fd)
+fsetfd_capcheck(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps)
 {
 	spin_lock(&fdp->fd_spin);
-	fsetfd_locked(fdp, fp, fd);
+	fsetfd_locked(fdp, fp, fd, fcaps);
 	spin_unlock(&fdp->fd_spin);
 }
 
 /*
+ * MPSAFE
+ */
+void
+fsetfd(struct filedesc *fdp, struct file *fp, int fd)
+{
+	spin_lock(&fdp->fd_spin);
+	fsetfd_locked(fdp, fp, fd, NULL);
+	spin_unlock(&fdp->fd_spin);
+}
+/*
  * MPSAFE (exclusive spinlock must be held on call)
  */
-static 
+static
 struct file *
-funsetfd_locked(struct filedesc *fdp, int fd)
+funsetfd_locked(struct filedesc *fdp, int fd, struct ioctls_list **tofree)
 {
 	struct file *fp;
 
@@ -1647,6 +1882,13 @@ funsetfd_locked(struct filedesc *fdp, int fd)
 		return (NULL);
 	fdp->fd_files[fd].fp = NULL;
 	fdp->fd_files[fd].fileflags = 0;
+
+#ifdef CAPABILITIES
+	if (tofree)
+		*tofree = filecaps_free(&fdp->fd_files[fd].fcaps);
+#else
+	*tofree = NULL;
+#endif
 
 	fdreserve_locked(fdp, fd, -1);
 	fdfixup_locked(fdp, fd);
@@ -1661,7 +1903,7 @@ fgetfdflags(struct filedesc *fdp, int fd, int *flagsp)
 {
 	int error;
 
-	spin_lock(&fdp->fd_spin);
+	spin_lock_shared(&fdp->fd_spin);
 	if (((u_int)fd) >= fdp->fd_nfiles) {
 		error = EBADF;
 	} else if (fdp->fd_files[fd].fp == NULL) {
@@ -1670,7 +1912,7 @@ fgetfdflags(struct filedesc *fdp, int fd, int *flagsp)
 		*flagsp = fdp->fd_files[fd].fileflags;
 		error = 0;
 	}
-	spin_unlock(&fdp->fd_spin);
+	spin_unlock_shared(&fdp->fd_spin);
 	return (error);
 }
 
@@ -1855,7 +2097,7 @@ fdcopy(struct proc *p, struct filedesc **fpp)
 	int ni;
 
 	/*
-	 * Certain daemons might not have file descriptors. 
+	 * Certain daemons might not have file descriptors.
 	 */
 	if (fdp == NULL)
 		return (0);
@@ -1865,7 +2107,7 @@ fdcopy(struct proc *p, struct filedesc **fpp)
 	 * with operations by other threads on the fdp so we have to be
 	 * careful.
 	 */
-	newfdp = kmalloc(sizeof(struct filedesc), 
+	newfdp = kmalloc(sizeof(struct filedesc),
 			 M_FILEDESC, M_WAITOK | M_ZERO | M_NULLOK);
 	if (newfdp == NULL) {
 		*fpp = NULL;
@@ -1955,9 +2197,13 @@ again:
 			fdfixup_locked(newfdp, i);
 		} else if (fdnode->fp) {
 			if (fdnode->fp->f_type == DTYPE_KQUEUE) {
-				(void)funsetfd_locked(newfdp, i);
+				(void)funsetfd_locked(newfdp, i, NULL);
 			} else {
 				fhold(fdnode->fp);
+#ifdef CAPABILITIES
+				if (fdnode->fcaps.fc_ioctls)
+					refcount_acquire(&fdnode->fcaps.fc_ioctls->ref);
+#endif
 			}
 		}
 	}
@@ -1981,6 +2227,7 @@ fdfree(struct proc *p, struct filedesc *repl)
 	struct file *fp;
 	struct vnode *vp;
 	struct flock lf;
+	struct ioctls_list *tofree;
 
 	/*
 	 * Certain daemons might not have file descriptors.
@@ -2042,7 +2289,7 @@ fdfree(struct proc *p, struct filedesc *repl)
 				goto retry;
 			}
 			if (fdtol->fdl_holdcount > 0) {
-				/* 
+				/*
 				 * Ensure that fdtol->fdl_leader
 				 * remains valid in closef().
 				 */
@@ -2085,13 +2332,19 @@ fdfree(struct proc *p, struct filedesc *repl)
 	 */
 	for (i = 0; i <= fdp->fd_lastfile; ++i) {
 		if (fdp->fd_files[i].fp) {
-			fp = funsetfd_locked(fdp, i);
-			if (fp) {
+			fp = funsetfd_locked(fdp, i, &tofree);
+			if (fp || tofree) {
 				spin_unlock(&fdp->fd_spin);
-				if (SLIST_FIRST(&fp->f_klist))
-					knote_fdclose(fp, fdp, i);
-				closef(fp, p);
-				spin_lock(&fdp->fd_spin);
+	if (fp) {
+		if (SLIST_FIRST(&fp->f_klist))
+			knote_fdclose(fp, fdp, i);
+		closef(fp, p);
+	}
+#ifdef CAPABILITIES
+	if (tofree)
+		kfree(tofree, M_FILECAPS);
+#endif
+	spin_lock(&fdp->fd_spin);
 			}
 		}
 	}
@@ -2135,31 +2388,86 @@ fdfree(struct proc *p, struct filedesc *repl)
 	kfree(fdp, M_FILEDESC);
 }
 
+static struct file *
+getfp_locked(struct filedesc *fdp, int fd)
+{
+	if (((u_int)fd) >= fdp->fd_nfiles) {
+		return NULL;
+	}
+	return fdp->fd_files[fd].fp;
+}
+
 /*
  * Retrieve and reference the file pointer associated with a descriptor.
  *
  * MPSAFE
  */
-struct file *
-holdfp(struct filedesc *fdp, int fd, int flag)
+int
+holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_rights_t needrights, int needfcntl)
 {
-	struct file* fp;
+	int error;
+#ifdef CAPABILITIES
+	cap_rights_t haverights;
+#endif
 
 	spin_lock_shared(&fdp->fd_spin);
-	if (((u_int)fd) >= fdp->fd_nfiles) {
-		fp = NULL;
+
+	*fpp = getfp_locked(fdp, fd);
+
+	if (*fpp == NULL) {
+		error = EBADF;
 		goto done;
 	}
-	if ((fp = fdp->fd_files[fd].fp) == NULL)
+
+	if (((*fpp)->f_flag & flag) == 0 && flag != -1) {
+		*fpp = NULL;
+		error = EBADF;
 		goto done;
+	}
+
+#ifdef CAPABILITIES
+	haverights = cap_rights(fdp, fd);
+	error = cap_check(haverights, needrights);
+	if (error != 0) {
+		*fpp = NULL;
+		goto done;
+	}
+	if ((needrights & CAP_FCNTL) != 0) {
+		error = cap_fcntl_check(fdp, fd, needfcntl);
+		if (error != 0)
+			*fpp = NULL;
+		goto done;
+	}
+#endif
+
+	fhold(*fpp);
+done:
+	spin_unlock_shared(&fdp->fd_spin);
+	return error;
+}
+
+struct file *
+holdfp(struct filedesc *fdp, int fd, int flag) {
+
+	struct file *fp;
+
+	spin_lock_shared(&fdp->fd_spin);
+
+	fp = getfp_locked(fdp, fd);
+
+	if (fp == NULL) {
+		goto done;
+	}
+
 	if ((fp->f_flag & flag) == 0 && flag != -1) {
 		fp = NULL;
 		goto done;
 	}
+
 	fhold(fp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
-	return (fp);
+	return fp;
 }
 
 /*
@@ -2246,7 +2554,7 @@ done:
 static int
 is_unsafe(struct file *fp)
 {
-	if (fp->f_type == DTYPE_VNODE && 
+	if (fp->f_type == DTYPE_VNODE &&
 	    ((struct vnode *)(fp->f_data))->v_tag == VT_PROCFS)
 		return (1);
 	return (0);
@@ -2276,14 +2584,19 @@ setugidsafety(struct proc *p)
 			break;
 		if (fdp->fd_files[i].fp && is_unsafe(fdp->fd_files[i].fp)) {
 			struct file *fp;
+			struct ioctls_list *tofree;
 
 			/*
 			 * NULL-out descriptor prior to close to avoid
 			 * a race while close blocks.
 			 */
-			if ((fp = funsetfd_locked(fdp, i)) != NULL) {
+			if ((fp = funsetfd_locked(fdp, i, &tofree)) != NULL) {
 				knote_fdclose(fp, fdp, i);
 				closef(fp, p);
+#ifdef CAPABILITIES
+				if (tofree)
+					kfree(tofree, M_FILECAPS);
+#endif
 			}
 		}
 	}
@@ -2312,14 +2625,19 @@ fdcloseexec(struct proc *p)
 		if (fdp->fd_files[i].fp != NULL &&
 		    (fdp->fd_files[i].fileflags & UF_EXCLOSE)) {
 			struct file *fp;
+			struct ioctls_list *tofree;
 
 			/*
 			 * NULL-out descriptor prior to close to avoid
 			 * a race while close blocks.
 			 */
-			if ((fp = funsetfd_locked(fdp, i)) != NULL) {
+			if ((fp = funsetfd_locked(fdp, i, &tofree)) != NULL) {
 				knote_fdclose(fp, fdp, i);
 				closef(fp, p);
+#ifdef CAPABILITIES
+			if (tofree)
+				kfree(tofree, M_FILECAPS);
+#endif
 			}
 		}
 	}
@@ -2361,9 +2679,9 @@ fdcheckstd(struct lwp *lp)
 			if (error == 0)
 				error = vn_open(&nd, fp, flags, 0);
 			if (error == 0)
-				fsetfd(fdp, fp, devnull);
+				fsetfd_capcheck(fdp, fp, devnull, NULL);
 			else
-				fsetfd(fdp, NULL, devnull);
+				fsetfd_capcheck(fdp, NULL, devnull, NULL);
 			fdrop(fp);
 			nlookup_done(&nd);
 			if (error)
@@ -2456,7 +2774,7 @@ closef(struct file *fp, struct proc *p)
  *
  * fhold() can only be called if f_count is already at least 1 (i.e. the
  * caller of fhold() already has a reference to the file pointer in some
- * manner or other). 
+ * manner or other).
  *
  * f_count is not spin-locked.  Instead, atomic ops are used for
  * incrementing, decrementing, and handling the 1->0 transition.
@@ -2602,6 +2920,8 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 {
 	struct file *wfp;
 	struct file *xfp;
+	struct ioctls_list *tofree;
+	struct filecaps newcaps;
 	int werror;
 
 	if ((wfp = holdfp(fdp, sfd, -1)) == NULL)
@@ -2642,7 +2962,10 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 		}
 		spin_lock(&fdp->fd_spin);
 		fdp->fd_files[dfd].fileflags = fdp->fd_files[sfd].fileflags;
-		fsetfd_locked(fdp, wfp, dfd);
+#ifdef CAPABILITES
+		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
+#endif
+		fsetfd_locked(fdp, wfp, dfd, &newcaps);
 		spin_unlock(&fdp->fd_spin);
 		error = 0;
 		break;
@@ -2652,10 +2975,17 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 		 */
 		spin_lock(&fdp->fd_spin);
 		fdp->fd_files[dfd].fileflags = fdp->fd_files[sfd].fileflags;
-		fsetfd(fdp, wfp, dfd);
-		if ((xfp = funsetfd_locked(fdp, sfd)) != NULL) {
+#ifdef CAPABILITIES
+		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
+#endif
+		fsetfd_capcheck(fdp, wfp, dfd, &newcaps);
+		if ((xfp = funsetfd_locked(fdp, sfd, &tofree)) != NULL) {
 			spin_unlock(&fdp->fd_spin);
 			fdrop(xfp);
+#ifdef CAPABILITIES
+			if (tofree)
+				kfree(tofree, M_FILECAPS);
+#endif
 		} else {
 			spin_unlock(&fdp->fd_spin);
 		}
@@ -2677,8 +3007,8 @@ filedesc_to_leader_alloc(struct filedesc_to_leader *old,
 			 struct proc *leader)
 {
 	struct filedesc_to_leader *fdtol;
-	
-	fdtol = kmalloc(sizeof(struct filedesc_to_leader), 
+
+	fdtol = kmalloc(sizeof(struct filedesc_to_leader),
 			M_FILEDESC_TO_LEADER, M_WAITOK | M_ZERO);
 	fdtol->fdl_refcount = 1;
 	fdtol->fdl_holdcount = 0;
@@ -2744,12 +3074,12 @@ sysctl_kern_file(SYSCTL_HANDLER_ARGS)
 	 * global system statistics such as kern.openfiles.
 	 *
 	 * When just doing a count, note that we cannot just count
-	 * the elements and add f_count via the filehead list because 
+	 * the elements and add f_count via the filehead list because
 	 * threaded processes share their descriptor table and f_count might
 	 * still be '1' in that case.
 	 *
 	 * Since the SYSCTL op can block, we must hold the process to
-	 * prevent it being ripped out from under us either in the 
+	 * prevent it being ripped out from under us either in the
 	 * file descriptor loop or in the greater LIST_FOREACH.  The
 	 * process may be in varying states of disrepair.  If the process
 	 * is in SZOMB we may have caught it just as it is being removed
@@ -2763,7 +3093,7 @@ sysctl_kern_file(SYSCTL_HANDLER_ARGS)
 
 	/*
 	 * When just calculating the size, overestimate a bit to try to
-	 * prevent system activity from causing the buffer-fill call 
+	 * prevent system activity from causing the buffer-fill call
 	 * to fail later on.
 	 */
 	if (req->oldptr == NULL) {
@@ -2832,18 +3162,18 @@ SYSCTL_PROC(_kern, KERN_FILE, file, CTLTYPE_OPAQUE|CTLFLAG_RD,
 
 SYSCTL_INT(_kern, OID_AUTO, minfilesperproc, CTLFLAG_RW,
     &minfilesperproc, 0, "Minimum files allowed open per process");
-SYSCTL_INT(_kern, KERN_MAXFILESPERPROC, maxfilesperproc, CTLFLAG_RW, 
+SYSCTL_INT(_kern, KERN_MAXFILESPERPROC, maxfilesperproc, CTLFLAG_RW,
     &maxfilesperproc, 0, "Maximum files allowed open per process");
 SYSCTL_INT(_kern, OID_AUTO, maxfilesperuser, CTLFLAG_RW,
     &maxfilesperuser, 0, "Maximum files allowed open per user");
 
-SYSCTL_INT(_kern, KERN_MAXFILES, maxfiles, CTLFLAG_RW, 
+SYSCTL_INT(_kern, KERN_MAXFILES, maxfiles, CTLFLAG_RW,
     &maxfiles, 0, "Maximum number of files");
 
-SYSCTL_INT(_kern, OID_AUTO, maxfilesrootres, CTLFLAG_RW, 
+SYSCTL_INT(_kern, OID_AUTO, maxfilesrootres, CTLFLAG_RW,
     &maxfilesrootres, 0, "Descriptors reserved for root use");
 
-SYSCTL_INT(_kern, OID_AUTO, openfiles, CTLFLAG_RD, 
+SYSCTL_INT(_kern, OID_AUTO, openfiles, CTLFLAG_RD,
 	&nfiles, 0, "System-wide number of open files");
 
 static void
