@@ -69,8 +69,21 @@
 struct file;
 struct klist;
 
+struct ioctls_list {
+  u_int ref;
+  u_long ioctls[];
+};
+
+struct filecaps {
+	cap_rights_t 		fc_rights;     /* per-descriptor capability rights */
+	uint32_t		fc_fcntls;     /* per-descriptor allowed fcntls */
+	struct ioctls_list	*fc_ioctls;    /* per-descriptor allowed ioctls */
+	int16_t			fc_nioctls;    /* fc_ioctls array size */
+};
+
 struct fdnode {
 	struct file *fp;
+	struct filecaps fcaps;
 	char	fileflags;
 	char	unused01;
 	char	unused02;
@@ -156,7 +169,7 @@ int	dupfdopen (struct filedesc *, int, int, int, int);
 int	fdalloc (struct proc *p, int want, int *result);
 int	fdavail (struct proc *p, int n);
 int	falloc (struct lwp *lp, struct file **resultfp, int *resultfd);
-void	fsetfd (struct filedesc *fdp, struct file *fp, int fd);
+void	fsetfd (struct filedesc *fdp, struct file *fp, int fd); // , struct filecaps *fcaps);
 int	fgetfdflags(struct filedesc *fdp, int fd, int *flagsp);
 int	fsetfdflags(struct filedesc *fdp, int fd, int add_flags);
 int	fclrfdflags(struct filedesc *fdp, int fd, int rem_flags);

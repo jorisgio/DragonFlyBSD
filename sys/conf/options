@@ -75,6 +75,7 @@ ACPI_ENABLE_PCI		opt_acpi.h
 
 # Miscellaneous options.
 COMPAT_43	opt_compat.h
+COMPAT_SUNOS	opt_compat.h
 COMPILING_LINT	opt_lint.h
 DDB
 DDB_TRACE
@@ -90,6 +91,7 @@ NSWAPDEV	opt_swap.h
 NSWBUF_MIN	opt_swap.h
 PPS_SYNC	opt_ntp.h
 QUOTA
+CAPABILITIES 	opt_capsicum.h
 SUIDDIR		opt_suiddir.h
 SYSVMSG		opt_sysvipc.h
 SYSVSEM		opt_sysvipc.h
