@@ -458,7 +458,7 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 	case F_SETLK:
 		error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FLOCK, 0);
 		if (error != 0) {
-			goto done;
+			return (error);
 		}
 		if (fp->f_type != DTYPE_VNODE) {
 			error = EBADF;
@@ -526,7 +526,7 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 	case F_GETLK:
 		error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FLOCK, 0);
 		if (error != 0) {
-			goto done;
+			return (error);
 		}
 		if (fp->f_type != DTYPE_VNODE) {
 			error = EBADF;
@@ -557,7 +557,7 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 	 */
 	error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FCNTL, cmd);
 	if (error != 0) {
-		goto done;
+		return (error);
 	}
 
 	switch (cmd) {
@@ -1242,8 +1242,8 @@ kern_fstat(int fd, struct stat *ub)
 
 	KKASSERT(p);
 
-	if ((fp = holdfp(p->p_fd, fd, -1)) == NULL)
-		return (EBADF);
+	if ((error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FSTAT, 0)) == NULL)
+		return (error);
 	error = fo_stat(fp, ub, td->td_ucred);
 	fdrop(fp);
 
@@ -1282,8 +1282,8 @@ sys_fpathconf(struct fpathconf_args *uap)
 	struct vnode *vp;
 	int error = 0;
 
-	if ((fp = holdfp(p->p_fd, uap->fd, -1)) == NULL)
-		return (EBADF);
+	if ((error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FPATHCONF, 0)) == NULL)
+		return (error);
 
 	switch (fp->f_type) {
 	case DTYPE_PIPE:
@@ -2359,16 +2359,16 @@ fdfree(struct proc *p, struct filedesc *repl)
 			fp = funsetfd_locked(fdp, i, &tofree);
 			if (fp || tofree) {
 				spin_unlock(&fdp->fd_spin);
-	if (fp) {
-		if (SLIST_FIRST(&fp->f_klist))
-			knote_fdclose(fp, fdp, i);
-		closef(fp, p);
-	}
+				if (fp) {
+					if (SLIST_FIRST(&fp->f_klist))
+						knote_fdclose(fp, fdp, i);
+					closef(fp, p);
+				}
 #ifdef CAPABILITIES
-	if (tofree)
-		kfree(tofree, M_FILECAPS);
+				if (tofree)
+					kfree(tofree, M_FILECAPS);
 #endif
-	spin_lock(&fdp->fd_spin);
+				spin_lock(&fdp->fd_spin);
 			}
 		}
 	}
@@ -2872,8 +2872,10 @@ sys_flock(struct flock_args *uap)
 	struct flock lf;
 	int error;
 
-	if ((fp = holdfp(p->p_fd, uap->fd, -1)) == NULL)
-		return (EBADF);
+	error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FLOCK, 0);
+	if (error = EBADF) {
+		return (error);
+	}
 	if (fp->f_type != DTYPE_VNODE) {
 		error = EOPNOTSUPP;
 		goto done;
