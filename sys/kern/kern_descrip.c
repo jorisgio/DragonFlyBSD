@@ -202,12 +202,12 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 		oldsize = (sizeof (struct ioctls_list)) + (sizeof (u_long)) * (src->fc_nioctls - 1);
 		newsize =  sizeof (dst->fc_ioctls);
 		if ((oldsize - newsize) != 0)
-			return oldsize - newsize;
+			return (oldsize - newsize);
 
 		bcopy(src->fc_ioctls, dst->fc_ioctls, oldsize);
 		refcount_init(&dst->fc_ioctls->ref, 1);
 	}
-	return 0;
+	return (0);
 }
 
 /*
@@ -233,14 +233,14 @@ filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst)
 struct ioctls_list *
 filecaps_free(struct filecaps *fcaps)
 {
-  struct ioctls_list *rt;
+	struct ioctls_list *rt;
 
-  if( (rt = fcaps->fc_ioctls) != NULL) {
-    if(refcount_release(&rt->ref) == 0)
-      rt = NULL;
-  }
-  bzero(fcaps, sizeof(struct filecaps));
-  return rt;
+	if ((rt = fcaps->fc_ioctls) != NULL) {
+		if(refcount_release(&rt->ref) == 0)
+			rt = NULL;
+	}
+	bzero(fcaps, sizeof(struct filecaps));
+	return (rt);
 }
 
 
@@ -250,11 +250,11 @@ filecaps_free(struct filecaps *fcaps)
 void
 filecaps_free_unlocked(struct filecaps *fcaps)
 {
-  if(fcaps->fc_ioctls != NULL) {
-    if(refcount_release(&fcaps->fc_ioctls->ref) != 0)
-      kfree(&fcaps->fc_ioctls->ref, M_FILECAPS);
-  }
-  bzero(fcaps, sizeof(struct filecaps));
+	if(fcaps->fc_ioctls != NULL) {
+		if(refcount_release(&fcaps->fc_ioctls->ref) != 0)
+			kfree(&fcaps->fc_ioctls->ref, M_FILECAPS);
+	}
+	bzero(fcaps, sizeof(struct filecaps));
 }
 
 /*
@@ -434,50 +434,21 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 	/*
 	 * Operations on file pointers
 	 */
-	if ((fp = holdfp(p->p_fd, fd, -1)) == NULL)
-		return (EBADF);
 
+	/* Operations on locks */
 	switch (cmd) {
-	case F_GETFL:
-		dat->fc_flags = OFLAGS(fp->f_flag);
-		error = 0;
-		break;
-
-	case F_SETFL:
-		oflags = fp->f_flag;
-		nflags = FFLAGS(dat->fc_flags & ~O_ACCMODE) & FCNTLFLAGS;
-		nflags |= oflags & ~FCNTLFLAGS;
-
-		error = 0;
-		if (((nflags ^ oflags) & O_APPEND) && (oflags & FAPPENDONLY))
-			error = EINVAL;
-		if (error == 0 && ((nflags ^ oflags) & FASYNC)) {
-			tmp = nflags & FASYNC;
-			error = fo_ioctl(fp, FIOASYNC, (caddr_t)&tmp,
-					 cred, NULL);
-		}
-		if (error == 0)
-			fp->f_flag = nflags;
-		break;
-
-	case F_GETOWN:
-		error = fo_ioctl(fp, FIOGETOWN, (caddr_t)&dat->fc_owner,
-				 cred, NULL);
-		break;
-
-	case F_SETOWN:
-		error = fo_ioctl(fp, FIOSETOWN, (caddr_t)&dat->fc_owner,
-				 cred, NULL);
-		break;
-
 	case F_SETLKW:
 		flg |= F_WAIT;
 		/* Fall into F_SETLK */
 
 	case F_SETLK:
+		error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FLOCK, 0);
+		if (error != 0) {
+			goto done;
+		}
 		if (fp->f_type != DTYPE_VNODE) {
 			error = EBADF;
-			break;
+			goto done;
 		}
 		vp = (struct vnode *)fp->f_data;
 
@@ -536,12 +507,16 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 			(void) VOP_ADVLOCK(vp, (caddr_t)p->p_leader,
 					   F_UNLCK, &dat->fc_flock, F_POSIX);
 		}
-		break;
+		goto done;
 
 	case F_GETLK:
+		error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FLOCK, 0);
+		if (error != 0) {
+			goto done;
+		}
 		if (fp->f_type != DTYPE_VNODE) {
 			error = EBADF;
-			break;
+			goto done;
 		}
 		vp = (struct vnode *)fp->f_data;
 		/*
@@ -551,18 +526,65 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 		    dat->fc_flock.l_type != F_WRLCK &&
 		    dat->fc_flock.l_type != F_UNLCK) {
 			error = EINVAL;
-			break;
+			goto done;
 		}
 		if (dat->fc_flock.l_whence == SEEK_CUR)
 			dat->fc_flock.l_start += fp->f_offset;
 		error = VOP_ADVLOCK(vp, (caddr_t)p->p_leader, F_GETLK,
 			    &dat->fc_flock, F_POSIX);
+		goto done;
+	default:
 		break;
+
+	}
+
+	/*
+	 * Remaining operation need all CAP_FCNTL
+	 */
+	error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FCNTL, cmd);
+	if (error != 0) {
+		goto done;
+	}
+
+	switch (cmd) {
+	case F_GETFL:
+		dat->fc_flags = OFLAGS(fp->f_flag);
+		error = 0;
+		break;
+
+	case F_SETFL:
+		oflags = fp->f_flag;
+		nflags = FFLAGS(dat->fc_flags & ~O_ACCMODE) & FCNTLFLAGS;
+		nflags |= oflags & ~FCNTLFLAGS;
+
+		error = 0;
+		if (((nflags ^ oflags) & O_APPEND) && (oflags & FAPPENDONLY))
+			error = EINVAL;
+		if (error == 0 && ((nflags ^ oflags) & FASYNC)) {
+			tmp = nflags & FASYNC;
+			error = fo_ioctl(fp, FIOASYNC, (caddr_t)&tmp,
+					 cred, NULL);
+		}
+		if (error == 0)
+			fp->f_flag = nflags;
+		break;
+
+	case F_GETOWN:
+		error = fo_ioctl(fp, FIOGETOWN, (caddr_t)&dat->fc_owner,
+				 cred, NULL);
+		break;
+
+	case F_SETOWN:
+		error = fo_ioctl(fp, FIOSETOWN, (caddr_t)&dat->fc_owner,
+				 cred, NULL);
+		break;
+
 	default:
 		error = EINVAL;
 		break;
 	}
 
+done:
 	fdrop(fp);
 	return (error);
 }
@@ -1156,8 +1178,9 @@ kern_shutdown(int fd, int how)
 
 	KKASSERT(p);
 
-	if ((fp = holdfp(p->p_fd, fd, -1)) == NULL)
-		return (EBADF);
+	error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_SHUTDOWN, 0);
+	if (error != 0)
+		return (error);
 	error = fo_shutdown(fp, how);
 	fdrop(fp);
 
@@ -2364,7 +2387,7 @@ static struct file *
 getfp_locked(struct filedesc *fdp, int fd)
 {
 	if (((u_int)fd) >= fdp->fd_nfiles) {
-		return NULL;
+		return (NULL);
 	}
 	return fdp->fd_files[fd].fp;
 }
@@ -2415,7 +2438,7 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 	fhold(*fpp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
-	return error;
+	return (error);
 }
 
 struct file *
@@ -2439,7 +2462,7 @@ holdfp(struct filedesc *fdp, int fd, int flag) {
 	fhold(fp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
-	return fp;
+	return (fp);
 }
 
 /*
