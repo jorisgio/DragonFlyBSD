@@ -175,11 +175,11 @@ filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst)
 {
 
 	*dst = *src;
-  if (src->fc_ioctls != NULL) {
+	if (src->fc_ioctls != NULL) {
 		KASSERT(src->fc_nioctls > 0,
 				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
-    refcount_acquire(&dst->fc_ioctls->ref);
-  }
+		refcount_acquire(&dst->fc_ioctls->ref);
+	}
 }
 
 
@@ -216,12 +216,13 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 void
 filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst)
 {
-  size_t size;
+	size_t size;
 
-  spin_lock_shared(&fp->fd_spin);
-  size = sizeof(fp->fd_files[src].fcaps.fc_ioctls[0]) * fp->fd_files[src].fcaps.fc_nioctls;
-  spin_unlock_shared(&fp->fd_spin);
-  dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
+	spin_lock_shared(&fp->fd_spin);
+	size = sizeof(fp->fd_files[src].fcaps.fc_ioctls[0]) *
+	    fp->fd_files[src].fcaps.fc_nioctls;
+	spin_unlock_shared(&fp->fd_spin);
+	dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
 }
 
 /*

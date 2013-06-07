@@ -61,6 +61,8 @@
 
 #define	CAP_NONE		0x0000000000000000ULL
 
+#define CAP_DEFAULT CAP_NONE
+
 /*
  * General file I/O.
  */
