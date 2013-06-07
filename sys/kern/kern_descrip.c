@@ -1214,7 +1214,7 @@ kern_fstat(int fd, struct stat *ub)
 
 	KKASSERT(p != NULL);
 
-	if ((error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FSTAT, 0)) == NULL)
+	if ((error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FSTAT, 0)) != 0)
 		return (error);
 	error = fo_stat(fp, ub, td->td_ucred);
 	fdrop(fp);
