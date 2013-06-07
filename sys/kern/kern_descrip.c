@@ -199,7 +199,8 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 		KASSERT(src->fc_nioctls > 0,
 				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
 
-		oldsize = (sizeof (struct ioctls_list)) + (sizeof (u_long)) * (src->fc_nioctls - 1);
+		/* XXX */
+		oldsize = offsetof(struct ioctls_list, ioctls) + sizeof(u_long);
 		newsize =  sizeof (dst->fc_ioctls);
 		if ((oldsize - newsize) != 0)
 			return (oldsize - newsize);
@@ -1211,7 +1212,7 @@ kern_fstat(int fd, struct stat *ub)
 	struct file *fp;
 	int error;
 
-	KKASSERT(p);
+	KKASSERT(p != NULL);
 
 	if ((error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FSTAT, 0)) == NULL)
 		return (error);
@@ -1253,7 +1254,7 @@ sys_fpathconf(struct fpathconf_args *uap)
 	struct vnode *vp;
 	int error = 0;
 
-	if ((error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FPATHCONF, 0)) == NULL)
+	if ((error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FPATHCONF, 0)) != 0 )
 		return (error);
 
 	switch (fp->f_type) {
@@ -2844,7 +2845,7 @@ sys_flock(struct flock_args *uap)
 	int error;
 
 	error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FLOCK, 0);
-	if (error = EBADF) {
+	if (error == EBADF) {
 		return (error);
 	}
 	if (fp->f_type != DTYPE_VNODE) {
