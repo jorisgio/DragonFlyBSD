@@ -1872,6 +1872,9 @@ funsetfd_locked(struct filedesc *fdp, int fd, struct ioctls_list **tofree)
 {
 	struct file *fp;
 
+	if (tofree)
+		*tofree = NULL;
+
 	if ((unsigned)fd >= fdp->fd_nfiles)
 		return (NULL);
 	if ((fp = fdp->fd_files[fd].fp) == NULL)
@@ -1882,8 +1885,6 @@ funsetfd_locked(struct filedesc *fdp, int fd, struct ioctls_list **tofree)
 #ifdef CAPABILITIES
 	if (tofree)
 		*tofree = filecaps_free(&fdp->fd_files[fd].fcaps);
-#else
-	*tofree = NULL;
 #endif
 
 	fdreserve_locked(fdp, fd, -1);
@@ -2405,6 +2406,10 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 #ifdef CAPABILITIES
 	cap_rights_t haverights;
 #endif
+	if (fpp == NULL) {
+		error = EINVAL;
+		goto done;
+	}
 
 	spin_lock_shared(&fdp->fd_spin);
 
