@@ -85,6 +85,7 @@ typedef	quad_t *	qaddr_t;
 typedef __int64_t	blkcnt_t;	/* file block count */
 typedef __int64_t	blksize_t;	/* block size */
 typedef	char *		caddr_t;	/* core address */
+typedef __uint64_t	cap_rights_t	/* capability rights */
 typedef	const char *	c_caddr_t;	/* core address, pointer to const */
 typedef	volatile char *	v_caddr_t;	/* core address, pointer to volatile */
 typedef	__int32_t	daddr_t;	/* disk address */

@@ -749,3 +749,4 @@
 				char *path2, int flags); }
 532	STD	BSD	{ int eaccess(char *path, int flags); }
 533	STD	BSD	{ int lpathconf(char *path, int name); }
+534	STD	BSD	{ pid_t pdfork(int *fdp, int flags); }
