@@ -36,6 +36,7 @@
  */
 
 #include "opt_ktrace.h"
+#include "opt_procdesc.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -119,6 +120,58 @@ sys_fork(struct fork_args *uap)
 		uap->sysmsg_fds[0] = p2->p_pid;
 		uap->sysmsg_fds[1] = 0;
 		PRELE(p2);
+	}
+	return error;
+}
+
+/*
+ * Pdfork system call
+ * Like fork but returns a process descriptor using its first argument
+ */
+int
+sys_pdfork(struct pdfork_args *uap)
+{
+	struct lwp *lp = curthread->td_lwp;
+	struct proc *p2;
+	struct file *fp;
+	struct filedesc *fdp;
+	int error;
+	int pd;
+#ifdef PROCDESC
+
+	KASSERT(lp->lwp_proc != NULL, "sys_pdfork : lwp has no proc associated");
+
+	fdp = lp->lwp_proc->p_fd;
+
+	/*
+	 * Reserve a new fd in the parent process for the child process
+	 * If fork fail, we can dispose this reservation
+	 */
+	error = falloc(lp->lwp_proc, &fp, &pd);
+	if (error != 0)
+		return error;
+
+	error = fork1(lp, RFDG | RFPROC | RFPGLOCK, &p2);
+	if (error == 0) {
+		/*
+		 * Set the file descriptor to point to the child proc
+		 */
+		fp->f_data = (void *) p2;
+		fsetfd(fdp, fp, pd);
+		PHOLD(p2);
+		start_forked_proc(lp, p2);
+		uap->sysmsg_fds[0] = p2->p_pid;
+		uap->sysmsg_fds[1] = 0;
+		PRELE(p2);
+		error = copyout(&pd, uap->fdp, sizeof(pd));
+	} else {
+		/*
+		 * dispose the filedescriptor we have reserved
+		 */
+		spin_lock(&fdp->fd_spin);
+		funsetfd_locked(fdp, pd);
+		spin_unlock(&fdp->fd_spin);
+		fdrop(fp);
 	}
 	return error;
 }
