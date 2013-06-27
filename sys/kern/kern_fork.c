@@ -159,6 +159,7 @@ sys_pdfork(struct pdfork_args *uap)
 		fp->f_data = (void *) p2;
 		fsetfd(fdp, fp, pd);
 		PHOLD(p2);
+		p2->p_procdesc = fp;
 		start_forked_proc(lp, p2);
 		uap->sysmsg_fds[0] = p2->p_pid;
 		uap->sysmsg_fds[1] = 0;

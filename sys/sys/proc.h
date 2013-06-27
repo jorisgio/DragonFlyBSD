@@ -145,6 +145,7 @@ struct vkernel_lwp;
 struct vmspace_entry;
 struct ktrace_node;
 struct sem_undo;
+struct file;
 
 enum lwpstat {
 	LSRUN = 1,
@@ -250,6 +251,7 @@ struct	proc {
 	char		p_pad1[3];
 
 	pid_t		p_pid;		/* Process identifier. */
+	struct file	*p_procdesc;	/* Process descriptor, if any */
 	LIST_ENTRY(proc) p_hash;	/* Hash chain. */
 	LIST_ENTRY(proc) p_pglist;	/* List of processes in pgrp. */
 	struct proc	*p_pptr;	/* Pointer to parent process. */
@@ -361,7 +363,7 @@ struct	proc {
 #define	P_CONTINUED	0x08000	/* Proc has continued from a stopped state */
 
 #define P_UNUSED16	0x00010000
-#define	P_UNUSED17	0x00020000
+#define	P_KILLONCLOSE	0x00020000 /* Exit when the last procdesc is closed */
 
 #define	P_SWAPWAIT	0x00040000 /* Waiting for a swapin */
 #define	P_UNUSED19	0x00080000 /* was: Now in a zombied state */

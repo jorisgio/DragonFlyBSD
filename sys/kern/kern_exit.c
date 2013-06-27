@@ -525,30 +525,44 @@ exit1(int rv)
 	 */
 	KNOTE(&p->p_klist, NOTE_EXIT);
 
+#ifdef PROCDESC
 	/*
-	 * Notify parent that we're gone.  If parent has the PS_NOCLDWAIT
-	 * flag set, or if the handler is set to SIG_IGN, notify process 1
-	 * instead (and hope it will handle this situation).
+	 * If this is a process which is referenced by at least one process
+	 * descriptor, we may not deliver SIGCHILD to the parent. Concurrent
+	 * calls to exit1() and close() on a process descriptor referencing this
+	 * process are serialized by p_token.
 	 */
-	if (p->p_pptr->p_sigacts->ps_flag & (PS_NOCLDWAIT | PS_CLDSIGIGN)) {
-		proc_reparent(p, initproc);
+	if (p->p_procdesc == NULL) {
+
+#endif /* !PROCDESC */
+
+		/*
+		* Notify parent that we're gone.  If parent has the PS_NOCLDWAIT
+		* flag set, or if the handler is set to SIG_IGN, notify process 1
+		* instead (and hope it will handle this situation).
+		*/
+		if (p->p_pptr->p_sigacts->ps_flag & (PS_NOCLDWAIT | PS_CLDSIGIGN)) {
+			proc_reparent(p, initproc);
+		}
+
+		/* lwkt_gettoken(&proc_token); */
+		q = p->p_pptr;
+		PHOLD(q);
+		if (p->p_sigparent && q != initproc) {
+			ksignal(q, p->p_sigparent);
+		} else {
+			ksignal(q, SIGCHLD);
+		}
+
+		p->p_flags &= ~P_TRACED;
+		wakeup(p->p_pptr);
+
+		PRELE(q);
+		/* lwkt_reltoken(&proc_token); */
+		/* NOTE: p->p_pptr can get ripped out */
+#ifdef PROCDESC
 	}
-
-	/* lwkt_gettoken(&proc_token); */
-	q = p->p_pptr;
-	PHOLD(q);
-	if (p->p_sigparent && q != initproc) {
-	        ksignal(q, p->p_sigparent);
-	} else {
-	        ksignal(q, SIGCHLD);
-	}
-
-	p->p_flags &= ~P_TRACED;
-	wakeup(p->p_pptr);
-
-	PRELE(q);
-	/* lwkt_reltoken(&proc_token); */
-	/* NOTE: p->p_pptr can get ripped out */
+#endif /* !PROCDESC */
 	/*
 	 * cpu_exit is responsible for clearing curproc, since
 	 * it is heavily integrated with the thread/switching sequence.
