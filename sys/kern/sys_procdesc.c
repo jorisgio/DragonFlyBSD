@@ -61,7 +61,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t rights,
 	struct prochandle *ph;
 	int error;
 
-	KASSERT(p != NULL, "holdproc_capcheck called with a NULL pointer");
+	KASSERT(p != NULL, ("holdproc_capcheck called with a NULL pointer"));
 
 	if ((error = holdfp_capcheck(fdp, fd, &fp, -1, rights, -1)) != 0) {
 		return (error);
@@ -111,7 +111,7 @@ sys_pdgetpid(struct pdgetpid_args *uap)
 	int error;
 	pid_t pid;
 
-	KASSERT(p != NULL, "pdgetpid called with NULL curproc");
+	KASSERT(p != NULL, ("pdgetpid called with NULL curproc"));
 
 	error = kern_pdgetpid(p->p_fd, uap->fd, pid);
 	if (error == 0)
@@ -125,7 +125,7 @@ sys_pdgetpid(struct pdgetpid_args *uap)
 void
 procdesc_reap(struct proc *p)
 {
-	KASSERT(p->p_procdesc != NULL, "procdesc_reap: p_procdesc is NULL");
+	KASSERT(p->p_procdesc != NULL, ("procdesc_reap: p_procdesc is NULL"));
 
 	p->p_procdesc->f_data = NULL;
 	p->p_procdesc = NULL;
@@ -143,7 +143,7 @@ procdesc_close(struct file *fp)
 	struct proc *p;
 
 	struct proc *q = curproc;
-	KASSERT(q != NULL, "procdesc_close: cuproc is NULL");
+	KASSERT(q != NULL, ("procdesc_close: cuproc is NULL"));
 
 	fp->f_ops = &badfileops;
 

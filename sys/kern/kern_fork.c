@@ -139,7 +139,7 @@ sys_pdfork(struct pdfork_args *uap)
 	int pd;
 #ifdef PROCDESC
 
-	KASSERT(lp->lwp_proc != NULL, "sys_pdfork : lwp has no proc associated");
+	KASSERT(lp->lwp_proc != NULL, ("sys_pdfork : lwp has no proc associated"));
 
 	fdp = lp->lwp_proc->p_fd;
 
