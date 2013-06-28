@@ -175,6 +175,9 @@ sys_pdfork(struct pdfork_args *uap)
 		fdrop(fp);
 	}
 	return error;
+#else /* !PROCDESC */
+	return (ENOSYS);
+#endif /* PROCDESC */
 }
 
 /*
