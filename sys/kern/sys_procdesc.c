@@ -29,6 +29,22 @@ struct fileops procdesc_ops {
 	.fo_shutdown = procdesc_shutdown
 }
 
+/*
+ * When a process is reaped, the normal operations are not valid anymore
+ * since the proc structure is gone.
+ * These are fileops used when the referenced process has completely died.
+ */
+struct fileops procdesc_reaped_ops {
+	.fo_read = procdesc_read,
+	.fo_write = procdesc_write,
+	.fo_ioctl = procdesc_ioctl,
+	.fo_kqfilter = procdesc_kqfilter,
+	.fo_stat = procdesc_stat,
+	.fo_close = procdesc_close,
+	.fo_shutdown = procdesc_shutdown
+}
+
+
 //static void procdesc_init(void __unusded *dummy);
 //SYSINIT(procdesc, SI_SUB_VFS, SI_ORDER_ANY, procdesc_init, NULL)
 
@@ -102,6 +118,68 @@ sys_pdgetpid(struct pdgetpid_args *uap)
 		error = copyout(&pid, uap->pidp, sizeof(pid));
 	return (error);
 }
+
+/*
+ * Callback for cleaning things up when a process is reap
+ */
+void
+procdesc_reap(struct proc *p)
+{
+	KASSERT(p->p_procdesc != NULL, "procdesc_reap: p_procdesc is NULL");
+
+	p->p_procdesc->f_data = NULL;
+	p->p_procdesc = NULL;
+}
+
+
+/*
+ * last close on a process descriptor
+ * If the process is still running, terminates with SIGKILL if P_KILLONCLOSE is
+ * set, and let init clean up the mess.
+ */
+static int
+procdesc_close(struct file *fp)
+{
+	struct proc *p;
+
+	struct proc *q = curproc;
+	KASSERT(q != NULL, "procdesc_close: cuproc is NULL");
+
+	fp->f_ops = &badfileops;
+
+	if (p != NULL) {
+		/*
+		 * process has not yet been reaped
+		 */
+		lwkt_gettoken(&q->p_token);
+		if ( p->p_stat == SZOMB ) {
+			/*
+			 * process is already dead and waiting reaping
+			 * reap it, this will callback procdec_reap and clean
+			 * the procdesc reference. Proc is already in SZOMB,
+			 * hence kern_wait will not wait.
+			 */
+			while (proc_reap(q, p, NULL, NULL)) {
+				;
+			}
+		} else {
+			/*
+			 * If the process is not yet dead, we need to kill it.
+			 * Since we don't want to wait synchronously, we
+			 * reparent the process to init.
+			 */
+
+			p->p_sigparent = SIGCHLD;
+			proc_reparent(p, initproc);
+			if (p->p_flags & P_KILLONCLOSE)
+				ksignal(p, SIGKILL);
+		}
+
+		lwkt_reltoken(&q->p_token);
+	}
+	return(0);
+}
+
 
 static int
 procdesc_read(struct file *fp, struct uio *uio, struct ucred *cred,
