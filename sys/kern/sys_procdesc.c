@@ -1,6 +1,7 @@
 #include "opt_procdesc.h"
 
 #include <sys/types.h>
+#include <sys/sysproto.h>
 #include <sys/proc.h>
 #include <sys/ptrace.h>
 #include <sys/procdesc.h>
@@ -19,7 +20,7 @@ static int procdesc_read (struct file *fp, struct uio *uio,
 	struct ucred *cred, int flags);
 static int procdesc_write (struct file *fp, struct uio *uio,
 	struct ucred *cred, int flags);
-static int procdesc_ioctl (struct file *fp, struct uio *uio,
+static int procdesc_ioctl (struct file *fp, u_long com, cadd_t data,
 	struct ucred *cred, struct sysmsg *msg);
 static int procdesc_kqfilter (struct file *fp, struct knote *kn);
 static int procdesc_stat (struct file *fp, struct stat *sb,
@@ -35,7 +36,7 @@ struct fileops procdesc_ops = {
 	.fo_stat = procdesc_stat,
 	.fo_close = procdesc_close,
 	.fo_shutdown = procdesc_shutdown
-}
+};
 
 /*
  * When a process is reaped, the normal operations are not valid anymore
@@ -50,7 +51,7 @@ struct fileops procdesc_reaped_ops = {
 	.fo_stat = procdesc_stat,
 	.fo_close = procdesc_close,
 	.fo_shutdown = procdesc_shutdown
-}
+};
 
 
 //static void procdesc_init(void __unusded *dummy);
@@ -84,7 +85,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t __unused rights,
 	if ((*p = fp->f_data) == NULL) {
 		error = ESRCH;
 	} else {
-		PHOLD(p);
+		PHOLD(*p);
 		error = 0;
 	}
 	lwkt_relttoken(&proc_token);
@@ -120,7 +121,7 @@ sys_pdgetpid(struct pdgetpid_args *uap)
 
 	KASSERT(p != NULL, ("pdgetpid called with NULL curproc"));
 
-	error = kern_pdgetpid(p->p_fd, uap->fd, pid);
+	error = kern_pdgetpid(p->p_fd, uap->fd, &pid);
 	if (error == 0)
 		error = copyout(&pid, uap->pidp, sizeof(pid));
 	return (error);
@@ -206,7 +207,7 @@ procdesc_write(struct file *fp, struct uio *uio, struct ucred *cred,
 
 
 static int
-procdesc_ioctl(struct file *fp, struct uio *uio, struct ucred *cred,
+procdesc_ioctl(struct file *fp, u_long com, cadd_t data, struct ucred *cred,
 	struct sysmsg *msg)
 {
 
