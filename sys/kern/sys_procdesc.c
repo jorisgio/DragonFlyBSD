@@ -70,7 +70,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t __unused rights,
 	KASSERT(p != NULL, ("holdproc_capcheck called with a NULL pointer"));
 
 	if ((fp = holdfp(fdp, fd, -1)) == NULL) {
-		return (error);
+		return (EBADF);
 	}
 
 	if (fp->f_type != DTYPE_PROC) {
