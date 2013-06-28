@@ -5,9 +5,12 @@
 
 #ifdef _KERNEL
 
+struct proc;
+struct filedesc;
+
 int holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t rights,
 	struct proc **p);
-int kern_pdgetpid(struct filedesc *fdp, int fd, pid_t *pid);
+void procdesc_reap(struct proc *p);
 
 #else /* !_KERNEL */
 

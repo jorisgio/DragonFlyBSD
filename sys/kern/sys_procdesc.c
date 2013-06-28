@@ -1,6 +1,7 @@
 #include "opt_procdesc.h"
 
 #include <sys/types.h>
+#include <sys/systm.h>
 #include <sys/sysproto.h>
 #include <sys/proc.h>
 #include <sys/ptrace.h>
@@ -20,7 +21,7 @@ static int procdesc_read (struct file *fp, struct uio *uio,
 	struct ucred *cred, int flags);
 static int procdesc_write (struct file *fp, struct uio *uio,
 	struct ucred *cred, int flags);
-static int procdesc_ioctl (struct file *fp, u_long com, cadd_t data,
+static int procdesc_ioctl (struct file *fp, u_long com, caddr_t data,
 	struct ucred *cred, struct sysmsg *msg);
 static int procdesc_kqfilter (struct file *fp, struct knote *kn);
 static int procdesc_stat (struct file *fp, struct stat *sb,
@@ -88,7 +89,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t __unused rights,
 		PHOLD(*p);
 		error = 0;
 	}
-	lwkt_relttoken(&proc_token);
+	lwkt_reltoken(&proc_token);
 	fdrop(fp);
 	return (error);
 }
@@ -207,7 +208,7 @@ procdesc_write(struct file *fp, struct uio *uio, struct ucred *cred,
 
 
 static int
-procdesc_ioctl(struct file *fp, u_long com, cadd_t data, struct ucred *cred,
+procdesc_ioctl(struct file *fp, u_long com, caddr_t data, struct ucred *cred,
 	struct sysmsg *msg)
 {
 
