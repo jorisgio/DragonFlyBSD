@@ -409,4 +409,6 @@ union sysunion {
 	struct	linkat_args linkat;
 	struct	eaccess_args eaccess;
 	struct	lpathconf_args lpathconf;
+	struct	pdfork_args pdfork;
+	struct	pdgetpid_args pdgetpid;
 };

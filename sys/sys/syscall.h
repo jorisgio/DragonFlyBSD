@@ -374,4 +374,6 @@
 #define	SYS_linkat	531
 #define	SYS_eaccess	532
 #define	SYS_lpathconf	533
-#define	SYS_MAXSYSCALL	534
+#define	SYS_pdfork	534
+#define	SYS_pdgetpid	535
+#define	SYS_MAXSYSCALL	536

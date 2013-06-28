@@ -2289,6 +2289,19 @@ struct	lpathconf_args {
 	char *	path;	char path_[PAD_(char *)];
 	int	name;	char name_[PAD_(int)];
 };
+struct	pdfork_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int *	fdp;	char fdp_[PAD_(int *)];
+	int	flags;	char flags_[PAD_(int)];
+};
+struct	pdgetpid_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	pid_t *	pidp;	char pidp_[PAD_(pid_t *)];
+};
 
 #ifdef COMPAT_43
 
@@ -2897,6 +2910,8 @@ int	sys_vquotactl (struct vquotactl_args *);
 int	sys_linkat (struct linkat_args *);
 int	sys_eaccess (struct eaccess_args *);
 int	sys_lpathconf (struct lpathconf_args *);
+int	sys_pdfork (struct pdfork_args *);
+int	sys_pdgetpid (struct pdgetpid_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_
