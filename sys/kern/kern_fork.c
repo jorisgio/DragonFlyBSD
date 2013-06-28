@@ -170,14 +170,16 @@ sys_pdfork(struct pdfork_args *uap)
 		/*
 		 * dispose the filedescriptor we have reserved
 		 */
-		spin_lock(&fdp->fd_spin);
-		funsetfd_locked(fdp, pd);
-		spin_unlock(&fdp->fd_spin);
-		fdrop(fp);
+		fsetfd(fdp, NULL, pd);
 	}
+
+	fdrop(fp);
 	return error;
+
 #else /* !PROCDESC */
+
 	return (ENOSYS);
+
 #endif /* PROCDESC */
 }
 
