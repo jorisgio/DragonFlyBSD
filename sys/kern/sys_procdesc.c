@@ -155,6 +155,7 @@ procdesc_close(struct file *fp)
 	KASSERT(q != NULL, ("procdesc_close: cuproc is NULL"));
 
 	fp->f_ops = &badfileops;
+	p = (struct proc *) fp->f_data;
 
 	if (p != NULL) {
 		/*
