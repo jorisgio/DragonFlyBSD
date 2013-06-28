@@ -969,6 +969,7 @@ proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage)
 	PRELEZOMB(p);
 	kfree(p, M_PROC);
 	atomic_add_int(&nprocs, -1);
+	return (0);
 }
 
 /*
