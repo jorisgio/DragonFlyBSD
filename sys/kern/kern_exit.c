@@ -825,6 +825,7 @@ proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage)
 	struct lwp *lp;
 	struct pargs *pa;
 	struct sigacts *ps;
+	struct proc *t;
 	/*
 	 * We may go into SZOMB with threads still present.
 	 * We must wait for them to exit before we can reap
@@ -982,7 +983,7 @@ kern_wait(pid_t pid, int *status, int options, struct rusage *rusage, int *res)
 {
 	struct thread *td = curthread;
 	struct proc *q = td->td_proc;
-	struct proc *p, *t;
+	struct proc *p;
 	int nfound, error;
 
 	if (pid == 0)
