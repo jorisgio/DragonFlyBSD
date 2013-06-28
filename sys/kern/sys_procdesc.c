@@ -1,11 +1,19 @@
 #include "opt_procdesc.h"
 
+#include <sys/types.h>
 #include <sys/proc.h>
+#include <sys/ptrace.h>
 #include <sys/procdesc.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
+#include <sys/thread.h>
+
+/* XXX this is a temp decl for the standalone patch */
+#define CAP_PDGETPID 0
 
 #ifdef PROCDESC
+
+static int kern_pdgetpid(struct filedesc *fdp, int fd, pid_t *pid);
 
 static int procdesc_read (struct file *fp, struct uio *uio,
 	struct ucred *cred, int flags);
@@ -19,7 +27,7 @@ static int procdesc_stat (struct file *fp, struct stat *sb,
 static int procdesc_close (struct file *fp);
 static int procdesc_shutdown (struct file *fp, int how);
 
-struct fileops procdesc_ops {
+struct fileops procdesc_ops = {
 	.fo_read = procdesc_read,
 	.fo_write = procdesc_write,
 	.fo_ioctl = procdesc_ioctl,
@@ -34,7 +42,7 @@ struct fileops procdesc_ops {
  * since the proc structure is gone.
  * These are fileops used when the referenced process has completely died.
  */
-struct fileops procdesc_reaped_ops {
+struct fileops procdesc_reaped_ops = {
 	.fo_read = procdesc_read,
 	.fo_write = procdesc_write,
 	.fo_ioctl = procdesc_ioctl,
@@ -53,12 +61,11 @@ struct fileops procdesc_reaped_ops {
  * or ESRCH if the process has died.
  */
 int
-holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t rights,
+holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t __unused rights,
 	struct proc **p)
 {
 
 	struct file *fp;
-	struct prochandle *ph;
 	int error;
 
 	KASSERT(p != NULL, ("holdproc_capcheck called with a NULL pointer"));
@@ -85,7 +92,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t rights,
 	return (error);
 }
 
-int
+static int
 kern_pdgetpid(struct filedesc *fdp, int fd, pid_t *pid)
 {
 	struct proc *p;
@@ -209,7 +216,6 @@ procdesc_ioctl(struct file *fp, struct uio *uio, struct ucred *cred,
 static int
 procdesc_kqfilter (struct file *fp, struct knote *kn)
 {
-	struct proc *p;
 	/* TODO */
 
 	return (EOPNOTSUPP);
@@ -221,11 +227,7 @@ procdesc_stat (struct file *fp, struct stat *sb, struct ucred *cred)
 	/* TODO */
 	return (EOPNOTSUPP);
 }
-static int
-procdesc_close (struct file *fp)
-{
-	return (EOPNOTSUPP);
-}
+
 static int
 procdesc_shutdown (struct file *fp, int how)
 {
