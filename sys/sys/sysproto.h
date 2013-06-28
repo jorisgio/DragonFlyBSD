@@ -2300,6 +2300,7 @@ struct	pdgetpid_args {
 #ifdef _KERNEL
 	struct sysmsg sysmsg;
 #endif
+	int	fd;	char fd_[PAD_(int)];
 	pid_t *	pidp;	char pidp_[PAD_(pid_t *)];
 };
 
