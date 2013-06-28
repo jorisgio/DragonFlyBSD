@@ -552,7 +552,7 @@ int	p_trespass (struct ucred *cr1, struct ucred *cr2);
 void	setrunnable (struct lwp *);
 void	proc_stop (struct proc *);
 void	proc_unstop (struct proc *);
-void	proc_reap (struct proc *, struct proc *, int *, struct rusage *);
+int	proc_reap (struct proc *, struct proc *, int *, struct rusage *);
 void	sleep_gdinit (struct globaldata *);
 int	suser (struct thread *td);
 int	suser_cred (struct ucred *cred, int flag);
