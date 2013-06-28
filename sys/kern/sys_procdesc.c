@@ -69,7 +69,7 @@ holdproc_capcheck(struct filedesc *fdp, int fd, cap_rights_t __unused rights,
 
 	KASSERT(p != NULL, ("holdproc_capcheck called with a NULL pointer"));
 
-	if ((error = holdfp_capcheck(fdp, fd, &fp, -1, rights, -1)) != 0) {
+	if ((fp = holdfp(fdp, fd, -1)) == NULL) {
 		return (error);
 	}
 
