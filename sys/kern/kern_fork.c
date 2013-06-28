@@ -42,6 +42,7 @@
 #include <sys/systm.h>
 #include <sys/sysproto.h>
 #include <sys/filedesc.h>
+#include <sys/file.h>
 #include <sys/kernel.h>
 #include <sys/sysctl.h>
 #include <sys/malloc.h>
@@ -147,11 +148,11 @@ sys_pdfork(struct pdfork_args *uap)
 	 * Reserve a new fd in the parent process for the child process
 	 * If fork fail, we can dispose this reservation
 	 */
-	error = falloc(lp->lwp_proc, &fp, &pd);
+	error = falloc(lp, &fp, &pd);
 	if (error != 0)
 		return error;
 
-	error = fork1(lp, RFDG | RFPROC | RFPGLOCK, &p2);
+	error = fork1(lp, RFFDG | RFPROC | RFPGLOCK, &p2);
 	if (error == 0) {
 		/*
 		 * Set the file descriptor to point to the child proc
