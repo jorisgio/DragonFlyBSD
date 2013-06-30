@@ -10,9 +10,6 @@
 #include <sys/filedesc.h>
 #include <sys/thread.h>
 
-/* XXX this is a temp decl for the standalone patch */
-#define CAP_PDGETPID 0
-
 #ifdef PROCDESC
 
 static int kern_pdgetpid(struct filedesc *fdp, int fd, pid_t *pid);
@@ -169,7 +166,7 @@ procdesc_close(struct file *fp)
 			 * the procdesc reference. Proc is already in SZOMB,
 			 * hence kern_wait will not wait.
 			 */
-			while (proc_reap(q, p, NULL, NULL)) {
+			while (proc_reap(q, p, NULL, NULL, 0)) {
 				;
 			}
 		} else {

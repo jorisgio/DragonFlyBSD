@@ -817,10 +817,11 @@ sys_wait4(struct wait_args *uap)
 /*
  * reap the p process being the q process.
  * returns 0 on success, or 1 if we race another thread trying to hold the
- * zombie process.
+ * zombie process. If checkparent is not null, check if the calling context q is
+ * the parent of the process p
  */
 int
-proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage)
+proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage, int checkparent)
 {
 	struct lwp *lp;
 	struct pargs *pa;
@@ -844,7 +845,7 @@ proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage)
 	if (PHOLDZOMB(p))
 		return (1);
 	lwkt_gettoken(&p->p_token);
-	if (p->p_pptr != q) {
+	if (checkparent && p->p_pptr != q) {
 		lwkt_reltoken(&p->p_token);
 		PRELEZOMB(p);
 		return (1);
@@ -1045,7 +1046,7 @@ loop:
 		if (p->p_stat == SZOMB) {
 			/* Take care of our return values. */
 			*res = p->p_pid;
-			if (proc_reap(q, p, status, rusage)) {
+			if (proc_reap(q, p, status, rusage, 1)) {
 				goto loop;
 			} else {
 				error = 0;

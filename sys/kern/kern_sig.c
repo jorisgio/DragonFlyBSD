@@ -827,6 +827,22 @@ sys_kill(struct kill_args *uap)
 }
 
 int
+sys_pdkill(struct pdkill_args *uap)
+{
+	int error;
+	struct proc *q, p;
+#ifdef PROCDESC
+	q = curproc;
+
+	if ((u_int)sig > _SIG_MAXSIG)
+		return (EINVAL);
+
+	error = holdproc_capcheck(q->p_fd, uap->fd, CAP_PDKILL, &p);
+	if (error)
+		return (error);
+	error = kern_kill(
+
+int
 sys_lwp_kill(struct lwp_kill_args *uap)
 {
 	int error;

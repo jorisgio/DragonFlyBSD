@@ -5,6 +5,11 @@
 
 #ifdef _KERNEL
 
+/* XXX temp declaration for standalone patch */
+#define CAP_PDKILL 0
+#define CAP_PDGETPID 0
+
+
 struct proc;
 struct filedesc;
 
