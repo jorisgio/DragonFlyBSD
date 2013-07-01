@@ -63,6 +63,7 @@
 #include <sys/unistd.h>
 #include <sys/kern_syscall.h>
 #include <sys/vkernel.h>
+#include <sys/procdesc.h>
 
 #include <sys/signal2.h>
 #include <sys/thread2.h>
