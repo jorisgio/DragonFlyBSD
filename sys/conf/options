@@ -89,6 +89,7 @@ MFI_DEBUG	opt_mfi.h
 NSWAPDEV	opt_swap.h
 NSWBUF_MIN	opt_swap.h
 PPS_SYNC	opt_ntp.h
+PROCDESC	opt_procdesc.h
 QUOTA
 SUIDDIR		opt_suiddir.h
 SYSVMSG		opt_sysvipc.h

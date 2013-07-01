@@ -301,4 +301,7 @@ MIASM =  \
 	vquotactl.o \
 	linkat.o \
 	eaccess.o \
-	lpathconf.o
+	lpathconf.o \
+	pdfork.o \
+	pdgetpid.o \
+	pdkill.o

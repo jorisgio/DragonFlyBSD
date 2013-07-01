@@ -570,4 +570,7 @@ struct sysent sysent[] = {
 	{ AS(linkat_args), (sy_call_t *)sys_linkat },	/* 531 = linkat */
 	{ AS(eaccess_args), (sy_call_t *)sys_eaccess },	/* 532 = eaccess */
 	{ AS(lpathconf_args), (sy_call_t *)sys_lpathconf },	/* 533 = lpathconf */
+	{ AS(pdfork_args), (sy_call_t *)sys_pdfork },	/* 534 = pdfork */
+	{ AS(pdgetpid_args), (sy_call_t *)sys_pdgetpid },	/* 535 = pdgetpid */
+	{ AS(pdkill_args), (sy_call_t *)sys_pdkill },	/* 536 = pdkill */
 };

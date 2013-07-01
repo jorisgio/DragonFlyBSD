@@ -542,4 +542,7 @@ const char *syscallnames[] = {
 	"linkat",			/* 531 = linkat */
 	"eaccess",			/* 532 = eaccess */
 	"lpathconf",			/* 533 = lpathconf */
+	"pdfork",			/* 534 = pdfork */
+	"pdgetpid",			/* 535 = pdgetpid */
+	"pdkill",			/* 536 = pdkill */
 };

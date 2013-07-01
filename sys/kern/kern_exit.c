@@ -525,30 +525,44 @@ exit1(int rv)
 	 */
 	KNOTE(&p->p_klist, NOTE_EXIT);
 
+#ifdef PROCDESC
 	/*
-	 * Notify parent that we're gone.  If parent has the PS_NOCLDWAIT
-	 * flag set, or if the handler is set to SIG_IGN, notify process 1
-	 * instead (and hope it will handle this situation).
+	 * If this is a process which is referenced by at least one process
+	 * descriptor, we may not deliver SIGCHILD to the parent. Concurrent
+	 * calls to exit1() and close() on a process descriptor referencing this
+	 * process are serialized by p_token.
 	 */
-	if (p->p_pptr->p_sigacts->ps_flag & (PS_NOCLDWAIT | PS_CLDSIGIGN)) {
-		proc_reparent(p, initproc);
+	if (p->p_procdesc == NULL) {
+
+#endif /* !PROCDESC */
+
+		/*
+		* Notify parent that we're gone.  If parent has the PS_NOCLDWAIT
+		* flag set, or if the handler is set to SIG_IGN, notify process 1
+		* instead (and hope it will handle this situation).
+		*/
+		if (p->p_pptr->p_sigacts->ps_flag & (PS_NOCLDWAIT | PS_CLDSIGIGN)) {
+			proc_reparent(p, initproc);
+		}
+
+		/* lwkt_gettoken(&proc_token); */
+		q = p->p_pptr;
+		PHOLD(q);
+		if (p->p_sigparent && q != initproc) {
+			ksignal(q, p->p_sigparent);
+		} else {
+			ksignal(q, SIGCHLD);
+		}
+
+		p->p_flags &= ~P_TRACED;
+		wakeup(p->p_pptr);
+
+		PRELE(q);
+		/* lwkt_reltoken(&proc_token); */
+		/* NOTE: p->p_pptr can get ripped out */
+#ifdef PROCDESC
 	}
-
-	/* lwkt_gettoken(&proc_token); */
-	q = p->p_pptr;
-	PHOLD(q);
-	if (p->p_sigparent && q != initproc) {
-	        ksignal(q, p->p_sigparent);
-	} else {
-	        ksignal(q, SIGCHLD);
-	}
-
-	p->p_flags &= ~P_TRACED;
-	wakeup(p->p_pptr);
-
-	PRELE(q);
-	/* lwkt_reltoken(&proc_token); */
-	/* NOTE: p->p_pptr can get ripped out */
+#endif /* !PROCDESC */
 	/*
 	 * cpu_exit is responsible for clearing curproc, since
 	 * it is heavily integrated with the thread/switching sequence.
@@ -801,6 +815,165 @@ sys_wait4(struct wait_args *uap)
 }
 
 /*
+ * reap the p process being the q process.
+ * returns 0 on success, or 1 if we race another thread trying to hold the
+ * zombie process. If checkparent is not null, check if the calling context q is
+ * the parent of the process p
+ */
+int
+proc_reap(struct proc *q, struct proc *p, int *status, struct rusage *rusage, int checkparent)
+{
+	struct lwp *lp;
+	struct pargs *pa;
+	struct sigacts *ps;
+	struct proc *t;
+	/*
+	 * We may go into SZOMB with threads still present.
+	 * We must wait for them to exit before we can reap
+	 * the master thread, otherwise we may race reaping
+	 * non-master threads.
+	 *
+	 * Only this routine can remove a process from
+	 * the zombie list and destroy it, use PACQUIREZOMB()
+	 * to serialize us and loop if it blocks (interlocked
+	 * by the parent's q->p_token).
+	 *
+	 * WARNING!  (p) can be invalid when PHOLDZOMB(p)
+	 *	     returns non-zero.  Be sure not to
+	 *	     mess with it.
+	 */
+	if (PHOLDZOMB(p))
+		return (1);
+	lwkt_gettoken(&p->p_token);
+	if (checkparent && p->p_pptr != q) {
+		lwkt_reltoken(&p->p_token);
+		PRELEZOMB(p);
+		return (1);
+	}
+	while (p->p_nthreads > 0) {
+		tsleep(&p->p_nthreads, 0, "lwpzomb", hz);
+	}
+
+	/*
+	 * Reap any LWPs left in p->p_lwps.  This is usually
+	 * just the last LWP.  This must be done before
+	 * we loop on p_lock since the lwps hold a ref on
+	 * it as a vmspace interlock.
+	 *
+	 * Once that is accomplished p_nthreads had better
+	 * be zero.
+	 */
+	while ((lp = RB_ROOT(&p->p_lwp_tree)) != NULL) {
+		lwp_rb_tree_RB_REMOVE(&p->p_lwp_tree, lp);
+		reaplwp(lp);
+	}
+	KKASSERT(p->p_nthreads == 0);
+
+	/*
+	 * Don't do anything really bad until all references
+	 * to the process go away.  This may include other
+	 * LWPs which are still in the process of being
+	 * reaped.  We can't just pull the rug out from under
+	 * them because they may still be using the VM space.
+	 *
+	 * Certain kernel facilities such as /proc will also
+	 * put a hold on the process for short periods of
+	 * time.
+	 */
+	PRELE(p);
+	PSTALL(p, "reap3", 0);
+
+
+	if (status)
+		*status = p->p_xstat;
+	if (rusage)
+		*rusage = p->p_ru;
+	/*
+	 * If we got the child via a ptrace 'attach',
+	 * we need to give it back to the old parent.
+	 */
+	if (p->p_oppid && (t = pfind(p->p_oppid)) != NULL) {
+		PHOLD(p);
+		p->p_oppid = 0;
+		proc_reparent(p, t);
+		ksignal(t, SIGCHLD);
+		wakeup((caddr_t)t);
+		PRELE(t);
+		lwkt_reltoken(&p->p_token);
+		PRELEZOMB(p);
+		return (0);
+	}
+
+	/*
+	 * Unlink the proc from its process group so that
+	 * the following operations won't lead to an
+	 * inconsistent state for processes running down
+	 * the zombie list.
+	 */
+	proc_remove_zombie(p);
+#ifdef PROCDESC
+	if (p->p_procdesc != NULL)
+		procdesc_reap(p);
+#endif /* !PROCDESC */
+	lwkt_reltoken(&p->p_token);
+	leavepgrp(p);
+
+	p->p_xstat = 0;
+	ruadd(&q->p_cru, &p->p_ru);
+
+	/*
+	 * Decrement the count of procs running with this uid.
+	 */
+	chgproccnt(p->p_ucred->cr_ruidinfo, -1, 0);
+
+	/*
+	 * Free up credentials.
+	 */
+	crfree(p->p_ucred);
+	p->p_ucred = NULL;
+
+	/*
+	 * Remove unused arguments
+	 */
+	pa = p->p_args;
+	p->p_args = NULL;
+	if (pa && refcount_release(&pa->ar_ref)) {
+		kfree(pa, M_PARGS);
+		pa = NULL;
+	}
+
+	ps = p->p_sigacts;
+	p->p_sigacts = NULL;
+	if (ps && refcount_release(&ps->ps_refcnt)) {
+		kfree(ps, M_SUBPROC);
+		ps = NULL;
+	}
+
+	/*
+	 * Our exitingcount was incremented when the process
+	 * became a zombie, now that the process has been
+	 * removed from (almost) all lists we should be able
+	 * to safely destroy its vmspace.  Wait for any current
+	 * holders to go away (so the vmspace remains stable),
+	 * then scrap it.
+	 */
+	PSTALL(p, "reap4", 0);
+	vmspace_exitfree(p);
+	PSTALL(p, "reap5", 0);
+
+	/*
+	 * NOTE: We have to officially release ZOMB in order
+	 *	 to ensure that a racing thread in kern_wait()
+	 *	 which blocked on ZOMB is woken up.
+	 */
+	PHOLD(p);
+	PRELEZOMB(p);
+	kfree(p, M_PROC);
+	atomic_add_int(&nprocs, -1);
+	return (0);
+}
+
+/*
  * wait1()
  *
  * wait_args(int pid, int *status, int options, struct rusage *rusage)
@@ -811,11 +984,8 @@ int
 kern_wait(pid_t pid, int *status, int options, struct rusage *rusage, int *res)
 {
 	struct thread *td = curthread;
-	struct lwp *lp;
 	struct proc *q = td->td_proc;
-	struct proc *p, *t;
-	struct pargs *pa;
-	struct sigacts *ps;
+	struct proc *p;
 	int nfound, error;
 
 	if (pid == 0)
@@ -874,150 +1044,14 @@ loop:
 
 		nfound++;
 		if (p->p_stat == SZOMB) {
-			/*
-			 * We may go into SZOMB with threads still present.
-			 * We must wait for them to exit before we can reap
-			 * the master thread, otherwise we may race reaping
-			 * non-master threads.
-			 *
-			 * Only this routine can remove a process from
-			 * the zombie list and destroy it, use PACQUIREZOMB()
-			 * to serialize us and loop if it blocks (interlocked
-			 * by the parent's q->p_token).
-			 *
-			 * WARNING!  (p) can be invalid when PHOLDZOMB(p)
-			 *	     returns non-zero.  Be sure not to
-			 *	     mess with it.
-			 */
-			if (PHOLDZOMB(p))
-				goto loop;
-			lwkt_gettoken(&p->p_token);
-			if (p->p_pptr != q) {
-				lwkt_reltoken(&p->p_token);
-				PRELEZOMB(p);
-				goto loop;
-			}
-			while (p->p_nthreads > 0) {
-				tsleep(&p->p_nthreads, 0, "lwpzomb", hz);
-			}
-
-			/*
-			 * Reap any LWPs left in p->p_lwps.  This is usually
-			 * just the last LWP.  This must be done before
-			 * we loop on p_lock since the lwps hold a ref on
-			 * it as a vmspace interlock.
-			 *
-			 * Once that is accomplished p_nthreads had better
-			 * be zero.
-			 */
-			while ((lp = RB_ROOT(&p->p_lwp_tree)) != NULL) {
-				lwp_rb_tree_RB_REMOVE(&p->p_lwp_tree, lp);
-				reaplwp(lp);
-			}
-			KKASSERT(p->p_nthreads == 0);
-
-			/*
-			 * Don't do anything really bad until all references
-			 * to the process go away.  This may include other
-			 * LWPs which are still in the process of being
-			 * reaped.  We can't just pull the rug out from under
-			 * them because they may still be using the VM space.
-			 *
-			 * Certain kernel facilities such as /proc will also
-			 * put a hold on the process for short periods of
-			 * time.
-			 */
-			PRELE(p);
-			PSTALL(p, "reap3", 0);
-
 			/* Take care of our return values. */
 			*res = p->p_pid;
-
-			if (status)
-				*status = p->p_xstat;
-			if (rusage)
-				*rusage = p->p_ru;
-			/*
-			 * If we got the child via a ptrace 'attach',
-			 * we need to give it back to the old parent.
-			 */
-			if (p->p_oppid && (t = pfind(p->p_oppid)) != NULL) {
-				PHOLD(p);
-				p->p_oppid = 0;
-				proc_reparent(p, t);
-				ksignal(t, SIGCHLD);
-				wakeup((caddr_t)t);
+			if (proc_reap(q, p, status, rusage, 1)) {
+				goto loop;
+			} else {
 				error = 0;
-				PRELE(t);
-				lwkt_reltoken(&p->p_token);
-				PRELEZOMB(p);
 				goto done;
 			}
-
-			/*
-			 * Unlink the proc from its process group so that
-			 * the following operations won't lead to an
-			 * inconsistent state for processes running down
-			 * the zombie list.
-			 */
-			proc_remove_zombie(p);
-			lwkt_reltoken(&p->p_token);
-			leavepgrp(p);
-
-			p->p_xstat = 0;
-			ruadd(&q->p_cru, &p->p_ru);
-
-			/*
-			 * Decrement the count of procs running with this uid.
-			 */
-			chgproccnt(p->p_ucred->cr_ruidinfo, -1, 0);
-
-			/*
-			 * Free up credentials.
-			 */
-			crfree(p->p_ucred);
-			p->p_ucred = NULL;
-
-			/*
-			 * Remove unused arguments
-			 */
-			pa = p->p_args;
-			p->p_args = NULL;
-			if (pa && refcount_release(&pa->ar_ref)) {
-				kfree(pa, M_PARGS);
-				pa = NULL;
-			}
-
-			ps = p->p_sigacts;
-			p->p_sigacts = NULL;
-			if (ps && refcount_release(&ps->ps_refcnt)) {
-				kfree(ps, M_SUBPROC);
-				ps = NULL;
-			}
-
-			/*
-			 * Our exitingcount was incremented when the process
-			 * became a zombie, now that the process has been
-			 * removed from (almost) all lists we should be able
-			 * to safely destroy its vmspace.  Wait for any current
-			 * holders to go away (so the vmspace remains stable),
-			 * then scrap it.
-			 */
-			PSTALL(p, "reap4", 0);
-			vmspace_exitfree(p);
-			PSTALL(p, "reap5", 0);
-
-			/*
-			 * NOTE: We have to officially release ZOMB in order
-			 *	 to ensure that a racing thread in kern_wait()
-			 *	 which blocked on ZOMB is woken up.
-			 */
-			PHOLD(p);
-			PRELEZOMB(p);
-			kfree(p, M_PROC);
-			atomic_add_int(&nprocs, -1);
-			error = 0;
-			goto done;
 		}
 		if (p->p_stat == SSTOP && (p->p_flags & P_WAITED) == 0 &&
 		    ((p->p_flags & P_TRACED) || (options & WUNTRACED))) {

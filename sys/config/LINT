@@ -740,6 +740,9 @@ options 	MD_NSECT=40000
 # is not a good idea to make this value too large.
 options 	NSWAPDEV=5
 
+# Process descriptor are supported when this option is enabled.
+options		PROCDESC
+
 # Disk quotas are supported when this option is enabled.
 options 	QUOTA			#enable disk quotas
 
