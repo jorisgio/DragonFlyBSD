@@ -2303,6 +2303,13 @@ struct	pdgetpid_args {
 	int	fd;	char fd_[PAD_(int)];
 	pid_t *	pidp;	char pidp_[PAD_(pid_t *)];
 };
+struct	pdkill_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	int	signum;	char signum_[PAD_(int)];
+};
 
 #ifdef COMPAT_43
 
@@ -2913,6 +2920,7 @@ int	sys_eaccess (struct eaccess_args *);
 int	sys_lpathconf (struct lpathconf_args *);
 int	sys_pdfork (struct pdfork_args *);
 int	sys_pdgetpid (struct pdgetpid_args *);
+int	sys_pdkill (struct pdkill_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_

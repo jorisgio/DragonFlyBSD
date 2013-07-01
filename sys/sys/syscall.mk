@@ -303,4 +303,5 @@ MIASM =  \
 	eaccess.o \
 	lpathconf.o \
 	pdfork.o \
-	pdgetpid.o
+	pdgetpid.o \
+	pdkill.o

@@ -544,4 +544,5 @@ const char *syscallnames[] = {
 	"lpathconf",			/* 533 = lpathconf */
 	"pdfork",			/* 534 = pdfork */
 	"pdgetpid",			/* 535 = pdgetpid */
+	"pdkill",			/* 536 = pdkill */
 };

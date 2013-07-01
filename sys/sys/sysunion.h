@@ -411,4 +411,5 @@ union sysunion {
 	struct	lpathconf_args lpathconf;
 	struct	pdfork_args pdfork;
 	struct	pdgetpid_args pdgetpid;
+	struct	pdkill_args pdkill;
 };

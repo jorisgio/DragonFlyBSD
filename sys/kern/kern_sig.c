@@ -36,6 +36,7 @@
  */
 
 #include "opt_ktrace.h"
+#include "opt_procdesc.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -830,17 +831,47 @@ int
 sys_pdkill(struct pdkill_args *uap)
 {
 	int error;
-	struct proc *q, p;
+	struct proc *p, *q;
 #ifdef PROCDESC
 	q = curproc;
 
-	if ((u_int)sig > _SIG_MAXSIG)
+	if ((u_int)uap->signum > _SIG_MAXSIG)
 		return (EINVAL);
+
 
 	error = holdproc_capcheck(q->p_fd, uap->fd, CAP_PDKILL, &p);
 	if (error)
 		return (error);
-	error = kern_kill(
+
+	lwkt_gettoken(&p->p_token);
+	if (p->p_stat == SZOMB) {
+		/* We are racing an exit. Returns success, as kern_kill does */
+		error = 0;
+		goto done;
+	}
+
+	if (!CANSIGNAL(p, uap->signum)) {
+	    error = EPERM;
+	    goto done;
+	}
+
+	if (p->p_flags & P_WEXIT) {
+		error = 0;
+		goto done;
+	}
+	if (uap->signum)
+		ksignal(p, uap->signum);
+
+done:
+	lwkt_reltoken(&p->p_token);
+	PRELE(p);
+	return (error);
+
+#else /* !PROCDESC */
+	return (ENOSYS);
+#endif /* PROCDESC */
+
+}
 
 int
 sys_lwp_kill(struct lwp_kill_args *uap)

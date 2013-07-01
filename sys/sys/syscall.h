@@ -376,4 +376,5 @@
 #define	SYS_lpathconf	533
 #define	SYS_pdfork	534
 #define	SYS_pdgetpid	535
-#define	SYS_MAXSYSCALL	536
+#define	SYS_pdkill	536
+#define	SYS_MAXSYSCALL	537
