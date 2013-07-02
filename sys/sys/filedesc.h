@@ -70,15 +70,15 @@ struct file;
 struct klist;
 
 struct ioctls_list {
-  u_int ref;
-  u_long *ioctls;
+  u_int		io_ref;
+  u_long	*io_ioctls;
+  uint16_t	io_nioctls;	/* io_ioctls array size */
 };
 
 struct filecaps {
 	cap_rights_t 		fc_rights;     /* per-descriptor capability rights */
 	uint32_t		fc_fcntls;     /* per-descriptor allowed fcntls */
 	struct ioctls_list	*fc_ioctls;    /* per-descriptor allowed ioctls */
-	int16_t			fc_nioctls;    /* fc_ioctls array size */
 };
 
 struct fdnode {

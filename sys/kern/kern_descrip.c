@@ -107,7 +107,7 @@
 #include <sys/capability.h>
 #endif
 
-static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
+static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps); /* !CAPABILITIES */
 void fsetfd_capcheck(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
 static void fdreserve_locked (struct filedesc *fdp, int fd0, int incr);
 static struct file *funsetfd_locked (struct filedesc *fdp, int fd, struct ioctls_list **tofree);
@@ -149,21 +149,24 @@ extern int cmask;
 void filecaps_init(struct filecaps *fcaps);
 void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
 ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
-struct ioctls_list *filecaps_free(struct filecaps *fcaps);
+void filecaps_clear(struct filecaps *fcaps);
+void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
+#if 0
 void ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst);
-void filecaps_free_unlocked(struct filecaps *fcaps);
+#endif
 void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
 static void filecaps_fill(struct filecaps *fcaps);
+void ioctlshold(struct ioctls_list *l);
+void ioctlsdrop(struct ioctls_list *l);
+
 /*
  * Initialize filecaps structure.
  */
 void
 filecaps_init(struct filecaps *fcaps)
 {
-
 	bzero(fcaps, sizeof(*fcaps));
-	fcaps->fc_nioctls = -1;
 }
 
 /*
@@ -176,9 +179,9 @@ filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst)
 
 	*dst = *src;
 	if (src->fc_ioctls != NULL) {
-		KASSERT(src->fc_nioctls > 0,
-				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
-		refcount_acquire(&dst->fc_ioctls->ref);
+		KASSERT(src->fc_ioctls->io_nioctls > 0,
+				("fc_ioctls != NULL, but io_nioctls=%hd", src->fc_ioctls->io_nioctls));
+		ioctlshold(src->fc_ioctls);
 	}
 }
 
@@ -196,22 +199,24 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 
 	*dst = *src;
 	if (src->fc_ioctls != NULL) {
-		KASSERT(src->fc_nioctls > 0,
-				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
+		KASSERT(src->fc_ioctls->io_nioctls > 0,
+				("fc_ioctls != NULL, but io_nioctls=%hd",
+						src->fc_ioctls->io_nioctls));
 
-		oldsize = sizeof(struct ioctls_list) + sizeof(u_long) * src->fc_nioctls;
-		newsize = sizeof(struct ioctls_list) + sizeof(u_long) * dst->fc_nioctls;
+		oldsize = sizeof(struct ioctls_list) + sizeof(u_long) * src->fc_ioctls->io_nioctls;
+		newsize = sizeof(struct ioctls_list) + sizeof(u_long) * dst->fc_ioctls->io_nioctls;
 		if ((oldsize - newsize) != 0)
 			return (oldsize - newsize);
 
 		bcopy(src->fc_ioctls, dst->fc_ioctls, oldsize);
-		refcount_init(&dst->fc_ioctls->ref, 1);
+		ioctlshold(dst->fc_ioctls);
 	}
 	return (0);
 }
 
+#if 0
 /*
- * Alloc space for fc_ioctls
+ * Alloc space for fc_ioctls whitelist
  */
 void
 ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst)
@@ -219,41 +224,53 @@ ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst)
 	size_t size;
 
 	spin_lock_shared(&fp->fd_spin);
-	size = sizeof(fp->fd_files[src].fcaps->fc_ioctls) + sizeof(u_long) *
+	size = sizeof(fp->fd_files[src].fcaps.fc_ioctls) + sizeof(u_long) *
 	    fp->fd_files[src].fcaps.fc_nioctls;
 	spin_unlock_shared(&fp->fd_spin);
 	dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
 }
+#endif
 
-/*
- * drop reference on the ioctl list. Spinlock must be hold exclusive
- * returns NULL if the list is still shared,
- * or a pointer to this list if it needs to be freed.
- */
-struct ioctls_list *
-filecaps_free(struct filecaps *fcaps)
+void
+ioctlshold(struct ioctls_list *l)
 {
-	struct ioctls_list *rt;
+	atomic_add_int(&l->io_ref, 1);
+}
 
-	if ((rt = fcaps->fc_ioctls) != NULL) {
-		if(refcount_release(&rt->ref) == 0)
-			rt = NULL;
-	}
-	bzero(fcaps, sizeof(struct filecaps));
-	return (rt);
+void
+ioctlsdrop(struct ioctls_list *l)
+{
+	if (atomic_fetchadd_int(&l->io_ref, -1) > 1)
+		return;
+
+	/*
+	 * The last reference on the ioctl list has gone, we fully owns
+	 * the structure. We need to clean it up.
+	 */
+
+	kfree(l->io_ioctls, M_FILECAPS);
 }
 
 
+
 /*
- * drop reference on the ioctl list.
+ * Clear capabilities list. Since we hold a spinlock, we cannot drop the
+ * reference on the ioctl list, we pass it back to the caller and let
+ * it handle that.
  */
 void
-filecaps_free_unlocked(struct filecaps *fcaps)
+filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree)
 {
-	if(fcaps->fc_ioctls != NULL) {
-		if(refcount_release(&fcaps->fc_ioctls->ref) != 0)
-			kfree(&fcaps->fc_ioctls->ref, M_FILECAPS);
-	}
+	if(tofree)
+		*tofree = fcaps->fc_ioctls;
+	bzero(fcaps, sizeof(struct filecaps));
+}
+
+void
+filecaps_clear(struct filecaps *fcaps)
+{
+	if (fcaps->fc_ioctls)
+		ioctlsdrop(fcaps->fc_ioctls);
 	bzero(fcaps, sizeof(struct filecaps));
 }
 
@@ -277,7 +294,6 @@ filecaps_fill(struct filecaps *fcaps)
 
 	fcaps->fc_rights = CAP_ALL;
 	fcaps->fc_ioctls = NULL;
-	fcaps->fc_nioctls = -1;
 	fcaps->fc_fcntls = CAP_FCNTL_ALL;
 }
 
@@ -295,14 +311,15 @@ filecaps_validate(const struct filecaps *fcaps, const char *func)
 			("%s: invalid fcntls", func));
 	KASSERT(fcaps->fc_fcntls == 0 || (fcaps->fc_rights & CAP_FCNTL) != 0,
 			("%s: fcntls without CAP_FCNTL", func));
-	KASSERT(fcaps->fc_ioctls != NULL ? fcaps->fc_nioctls > 0 :
-			(fcaps->fc_nioctls == -1 || fcaps->fc_nioctls == 0),
+	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls > 0)
+			fcaps->fc_ioctls == NULL,
 			("%s: invalid ioctls", func));
-	KASSERT(fcaps->fc_nioctls == 0 || (fcaps->fc_rights & CAP_IOCTL) != 0,
+	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls == 0 )
+			|| (fcaps->fc_rights & CAP_IOCTL) != 0,
 			("%s: ioctls without CAP_IOCTL", func));
 }
 
-#endif // CAPABILITIES
+#endif /* CAPABILITIES */
 
 /*
  * Fixup fd_freefile and fd_lastfile after a descriptor has been cleared.
@@ -745,8 +762,8 @@ retry:
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
 #ifdef CAPABILITIES
-			filecaps_free_unlocked(&oldcaps);
-#endif
+			filecaps_clear(&oldcaps);
+#endif /* !CAPABILITIES */
 			goto retry;
 		}
 		/*
@@ -757,8 +774,8 @@ retry:
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
 #ifdef CAPABILITIES
-			filecaps_free_unlocked(&oldcaps);
-#endif
+			filecaps_clear(&oldcaps);
+#endif /* !CAPABILITIES */
 			goto retry;
 		}
 		/*
@@ -770,8 +787,8 @@ retry:
 			spin_unlock(&fdp->fd_spin);
 			fdrop(fp);
 #ifdef CAPABILITIES
-			filecaps_free_unlocked(&oldcaps);
-#endif
+			filecaps_clear(&oldcaps);
+#endif /* !CAPABILITIES */
 			goto retry;
 		}
 		new = newfd;
@@ -783,8 +800,8 @@ retry:
 			kprintf("Warning: dup(): target descriptor %d is reserved, waiting for it to be resolved\n", new);
 			tsleep(fdp, 0, "fdres", hz);
 #ifdef CAPABILITIES
-			filecaps_free_unlocked(&oldcaps);
-#endif
+			filecaps_clear(&oldcaps);
+#endif /* !CAPABILITIES */
 			goto retry;
 		}
 
@@ -866,9 +883,9 @@ retry:
 done:
 #ifdef CAPABILITIES
 	if (error != 0) {
-		filecaps_free_unlocked(&oldcaps);
+		filecaps_clear(&oldcaps);
 	}
-#endif // CAPABILITIES
+#endif /* !CAPABILITIES */
 	return (error);
 }
 
@@ -1159,9 +1176,9 @@ kern_close(int fd)
 		}
 	}
 #ifdef CAPABILITIES
-	if ( tofree != NULL)
-		kfree(tofree, M_FILEDESC);
-#endif
+	if (tofree)
+		ioctlsdrop(tofree);
+#endif /* !CAPABILITIES */
 	return (error);
 }
 
@@ -1882,8 +1899,7 @@ funsetfd_locked(struct filedesc *fdp, int fd, struct ioctls_list **tofree)
 	fdp->fd_files[fd].fileflags = 0;
 
 #ifdef CAPABILITIES
-	if (tofree)
-		*tofree = filecaps_free(&fdp->fd_files[fd].fcaps);
+	filecaps_clear_locked(&fdp->fd_files[fd].fcaps, tofree);
 #endif
 
 	fdreserve_locked(fdp, fd, -1);
@@ -2193,13 +2209,21 @@ again:
 			fdfixup_locked(newfdp, i);
 		} else if (fdnode->fp) {
 			if (fdnode->fp->f_type == DTYPE_KQUEUE) {
+				/*
+				 * The ioctl whitelist is not yet referenced if
+				 * it exists, we don't have to release it, pass
+				 * a NULL parameter for tofree
+				 */
 				(void)funsetfd_locked(newfdp, i, NULL);
 			} else {
 				fhold(fdnode->fp);
 #ifdef CAPABILITIES
+				/* if an ioctl whitelist is present, we need to reference it
+				 * properly
+				 */
 				if (fdnode->fcaps.fc_ioctls)
-					refcount_acquire(&fdnode->fcaps.fc_ioctls->ref);
-#endif
+					ioctlshold(fdnode->fcaps.fc_ioctls);
+#endif /* !CAPABILITIES */
 			}
 		}
 	}
@@ -2329,19 +2353,23 @@ fdfree(struct proc *p, struct filedesc *repl)
 	for (i = 0; i <= fdp->fd_lastfile; ++i) {
 		if (fdp->fd_files[i].fp) {
 			fp = funsetfd_locked(fdp, i, &tofree);
-			if (fp || tofree) {
+			if (fp) {
 				spin_unlock(&fdp->fd_spin);
-				if (fp) {
-					if (SLIST_FIRST(&fp->f_klist))
-						knote_fdclose(fp, fdp, i);
-					closef(fp, p);
-				}
-#ifdef CAPABILITIES
-				if (tofree)
-					kfree(tofree, M_FILECAPS);
-#endif
+				if (SLIST_FIRST(&fp->f_klist))
+					knote_fdclose(fp, fdp, i);
+				closef(fp, p);
 				spin_lock(&fdp->fd_spin);
 			}
+#ifdef CAPABILITIES
+			/*
+			 * Drop references on the ioctl whitelist
+			 */
+			if (tofree) {
+				spin_unlock(&fdp->fd_spin);
+				ioctlsdrop(tofree);
+				spin_lock(&fdp->fd_spin);
+			}
+#endif /* !CAPABILITIES */
 		}
 	}
 	spin_unlock(&fdp->fd_spin);
@@ -2434,9 +2462,10 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 	}
 	if ((needrights & CAP_FCNTL) != 0) {
 		error = cap_fcntl_check(fdp, fd, needfcntl);
-		if (error != 0)
+		if (error != 0) {
 			*fpp = NULL;
-		goto done;
+			goto done;
+		}
 	}
 #endif
 
@@ -2595,8 +2624,8 @@ setugidsafety(struct proc *p)
 				closef(fp, p);
 #ifdef CAPABILITIES
 				if (tofree)
-					kfree(tofree, M_FILECAPS);
-#endif
+					ioctlsdrop(tofree);
+#endif /* !CAPABILITIES */
 			}
 		}
 	}
@@ -2636,8 +2665,8 @@ fdcloseexec(struct proc *p)
 				closef(fp, p);
 #ifdef CAPABILITIES
 			if (tofree)
-				kfree(tofree, M_FILECAPS);
-#endif
+				ioctlsdrop(tofree);
+#endif /* ! CAPABILITIES */
 			}
 		}
 	}
@@ -2966,7 +2995,7 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 		fdp->fd_files[dfd].fileflags = fdp->fd_files[sfd].fileflags;
 #ifdef CAPABILITES
 		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
-#endif
+#endif /* !CAPABILITIES */
 		fsetfd_locked(fdp, wfp, dfd, &newcaps);
 		spin_unlock(&fdp->fd_spin);
 		error = 0;
@@ -2979,15 +3008,15 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 		fdp->fd_files[dfd].fileflags = fdp->fd_files[sfd].fileflags;
 #ifdef CAPABILITIES
 		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
-#endif
+#endif /* !CAPABILITIES */
 		fsetfd_capcheck(fdp, wfp, dfd, &newcaps);
 		if ((xfp = funsetfd_locked(fdp, sfd, &tofree)) != NULL) {
 			spin_unlock(&fdp->fd_spin);
 			fdrop(xfp);
 #ifdef CAPABILITIES
 			if (tofree)
-				kfree(tofree, M_FILECAPS);
-#endif
+				ioctlsdrop(tofree);
+#endif /* !CAPABILITIES */
 		} else {
 			spin_unlock(&fdp->fd_spin);
 		}

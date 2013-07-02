@@ -65,4 +65,4 @@ cap_fcntl_check(struct filedesc *fdp, int fd, int cmd)
 
   return (ENOTCAPABLE);
 }
-#endif
+#endif /* CAPABILITIES */
