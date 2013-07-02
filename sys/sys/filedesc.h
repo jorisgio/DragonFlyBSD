@@ -71,7 +71,7 @@ struct klist;
 
 struct ioctls_list {
   u_int ref;
-  u_long ioctls[];
+  u_long *ioctls;
 };
 
 struct filecaps {
