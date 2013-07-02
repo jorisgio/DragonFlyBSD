@@ -150,7 +150,7 @@ void filecaps_init(struct filecaps *fcaps);
 void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
 ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
 struct ioctls_list *filecaps_free(struct filecaps *fcaps);
-void filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst);
+void ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst);
 void filecaps_free_unlocked(struct filecaps *fcaps);
 void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
@@ -199,9 +199,8 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 		KASSERT(src->fc_nioctls > 0,
 				("fc_ioctls != NULL, but fc_nioctls=%hd", src->fc_nioctls));
 
-		/* XXX */
-		oldsize = offsetof(struct ioctls_list, ioctls) + sizeof(u_long);
-		newsize =  sizeof (dst->fc_ioctls);
+		oldsize = sizeof(struct ioctls_list) + sizeof(u_long) * src->fc_nioctls;
+		newsize = sizeof(struct ioctls_list) + sizeof(u_long) * dst->fc_nioctls;
 		if ((oldsize - newsize) != 0)
 			return (oldsize - newsize);
 
@@ -215,12 +214,12 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
  * Alloc space for fc_ioctls
  */
 void
-filecaps_alloc(struct filedesc *fp, int src, struct filecaps *dst)
+ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst)
 {
 	size_t size;
 
 	spin_lock_shared(&fp->fd_spin);
-	size = sizeof(fp->fd_files[src].fcaps.fc_ioctls[0]) *
+	size = sizeof(fp->fd_files[src].fcaps->fc_ioctls) + sizeof(u_long) *
 	    fp->fd_files[src].fcaps.fc_nioctls;
 	spin_unlock_shared(&fp->fd_spin);
 	dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
