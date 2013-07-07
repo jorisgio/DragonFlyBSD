@@ -151,9 +151,7 @@ void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
 ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
 void filecaps_clear(struct filecaps *fcaps);
 void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
-#if 0
-void ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst);
-#endif
+void ioctls_list_alloc(size_t ncmds);
 void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
 static void filecaps_fill(struct filecaps *fcaps);
@@ -214,22 +212,15 @@ filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
 	return (0);
 }
 
-#if 0
 /*
  * Alloc space for fc_ioctls whitelist
  */
-void
-ioctls_list_alloc(struct filedesc *fp, int src, struct filecaps *dst)
+struct ioctls_list *
+ioctls_list_alloc(size_t ncmds)
 {
-	size_t size;
-
-	spin_lock_shared(&fp->fd_spin);
-	size = sizeof(fp->fd_files[src].fcaps.fc_ioctls) + sizeof(u_long) *
-	    fp->fd_files[src].fcaps.fc_nioctls;
-	spin_unlock_shared(&fp->fd_spin);
-	dst->fc_ioctls = kmalloc(size, M_FILECAPS, M_WAITOK | M_ZERO);
+	return kmalloc(sizeof(struct ioctls_list) + ncmds * sizeof(u_long),
+			M_FILECAPS, M_WAITOK | M_ZERO);
 }
-#endif
 
 void
 ioctlshold(struct ioctls_list *l)
@@ -248,7 +239,7 @@ ioctlsdrop(struct ioctls_list *l)
 	 * the structure. We need to clean it up.
 	 */
 
-	kfree(l->io_ioctls, M_FILECAPS);
+	kfree(l, M_FILECAPS);
 }
 
 
@@ -280,7 +271,6 @@ filecaps_clear(struct filecaps *fcaps)
 void
 filecaps_move(struct filecaps *src, struct filecaps *dst)
 {
-
 	*dst = *src;
 	bzero(src, sizeof(*src));
 }
@@ -308,11 +298,11 @@ filecaps_validate(const struct filecaps *fcaps, const char *func)
 	KASSERT((fcaps->fc_rights & ~CAP_MASK_VALID) == 0,
 			("%s: invalid rights", func));
 	KASSERT((fcaps->fc_fcntls & ~CAP_FCNTL_ALL) == 0,
-			("%s: invalid fcntls", func));
+			("%s: invalid fcntls %u : %u, %u, %u", func, fcaps->fc_fcntls, CAP_FCNTL_ALL, ~CAP_FCNTL_ALL, fcaps->fc_fcntls & ~CAP_FCNTL_ALL));
 	KASSERT(fcaps->fc_fcntls == 0 || (fcaps->fc_rights & CAP_FCNTL) != 0,
-			("%s: fcntls without CAP_FCNTL", func));
+			("%s: fcntls without CAP_FCNTL %lu %p %u", func, fcaps->fc_rights, fcaps->fc_ioctls, fcaps->fc_fcntls ));
 	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls > 0)
-			fcaps->fc_ioctls == NULL,
+			|| fcaps->fc_ioctls == NULL,
 			("%s: invalid ioctls", func));
 	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls == 0 )
 			|| (fcaps->fc_rights & CAP_IOCTL) != 0,
@@ -2441,7 +2431,7 @@ fdfree(struct proc *p, struct filedesc *repl)
 	kfree(fdp, M_FILEDESC);
 }
 
-static struct file *
+struct file *
 getfp_locked(struct filedesc *fdp, int fd)
 {
 	if (((u_int)fd) >= fdp->fd_nfiles) {
@@ -2907,7 +2897,7 @@ sys_flock(struct flock_args *uap)
 	int error;
 
 	error = holdfp_capcheck(p->p_fd, uap->fd, &fp, -1, CAP_FLOCK, 0);
-	if (error == EBADF) {
+	if (error) {
 		return (error);
 	}
 	if (fp->f_type != DTYPE_VNODE) {
@@ -2984,6 +2974,7 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 	struct filecaps newcaps;
 	int werror;
 
+	/* dup does not need a capability */
 	if ((wfp = holdfp(fdp, sfd, -1)) == NULL)
 		return (EBADF);
 
@@ -3022,7 +3013,7 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 		}
 		spin_lock(&fdp->fd_spin);
 		fdp->fd_files[dfd].fileflags = fdp->fd_files[sfd].fileflags;
-#ifdef CAPABILITES
+#ifdef CAPABILITIES
 		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
 #endif /* !CAPABILITIES */
 		fsetfd_locked(fdp, wfp, dfd, &newcaps);
@@ -3038,7 +3029,7 @@ dupfdopen(struct filedesc *fdp, int dfd, int sfd, int mode, int error)
 #ifdef CAPABILITIES
 		filecaps_shallow_copy(&fdp->fd_files[sfd].fcaps, &newcaps);
 #endif /* !CAPABILITIES */
-		fsetfd_capcheck(fdp, wfp, dfd, &newcaps);
+		fsetfd_locked(fdp, wfp, dfd, &newcaps);
 		if ((xfp = funsetfd_locked(fdp, sfd, &tofree)) != NULL) {
 			spin_unlock(&fdp->fd_spin);
 			fdrop(xfp);
