@@ -180,7 +180,7 @@ static __inline int *__error(void)
 
 #ifndef _POSIX_SOURCE
 #define	ENOMEDIUM	93		/* linux */
-#define	EUNUSED94	94
+#define	ENOTCAPABLE	94		/* Capabilities insufficient */
 #define	EUNUSED95	95
 #define	EUNUSED96	96
 #define	EUNUSED97	97

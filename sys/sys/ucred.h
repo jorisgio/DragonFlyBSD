@@ -68,10 +68,18 @@ struct ucred {
 	uid_t   cr_svuid;		/* Saved effective user id. */
 	gid_t   cr_rgid;		/* Real group id. */
 	gid_t   cr_svgid;		/* Saved effective group id. */
+	u_int	cr_flags;		/* credential flags */
+
 };
 #define cr_gid cr_groups[0]
 #define NOCRED ((struct ucred *)0)	/* no credential available */
 #define FSCRED ((struct ucred *)-1)	/* filesystem credential */
+
+/*
+ * Flags for cr_flags.
+ */
+#define CRED_FLAG_CAPMODE   0x00000001  /* In capability mode. */
+
 
 /*
  * This is the external representation of struct ucred, based upon the
