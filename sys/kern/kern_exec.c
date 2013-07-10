@@ -25,6 +25,7 @@
  *
  * $FreeBSD: src/sys/kern/kern_exec.c,v 1.107.2.15 2002/07/30 15:40:46 nectar Exp $
  */
+#include "opt_capsicum.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,6 +53,7 @@
 #include <sys/vnode.h>
 #include <sys/vmmeter.h>
 #include <sys/libkern.h>
+#include <sys/capability.h>
 
 #include <cpu/lwbuf.h>
 
@@ -240,6 +242,18 @@ kern_execve(struct nlookupdata *nd, struct image_args *args)
 	imgp->image_header = NULL;
 
 interpret:
+#ifdef CAPABILITY_MODE
+	/*
+	 * While capability mode can't reach this point via direct
+	 * path arguments to execve(), we also don't allow
+	 * interpreters to be used in capability mode (for now).
+	 * Catch indirect lookups and return a permissions error.
+	 */
+	if (IN_CAPABILITY_MODE(p)) {
+		error = ECAPMODE;
+		goto exec_fail;
+	}
+#endif /* !CAPABILITY_MODE */
 
 	/*
 	 * Translate the file name to a vnode.  Unlock the cache entry to
@@ -428,9 +442,19 @@ interpret:
 	 *
 	 * Don't honor setuid/setgid if the filesystem prohibits it or if
 	 * the process is being traced.
+	 *
+	 * We disable setuid/setgid/etc in compatibility mode on the basis
+	 * that most setugid applications are not written with that
+	 * environment in mind, and will therefore almost certainly operate
+	 * incorrectly. In principle there's no reason that setugid
+	 * applications might not be useful in capability mode, so we may want
+	 * to reconsider this conservative design choice in the future.
 	 */
 	if ((((attr.va_mode & VSUID) && p->p_ucred->cr_uid != attr.va_uid) ||
 	     ((attr.va_mode & VSGID) && p->p_ucred->cr_gid != attr.va_gid)) &&
+#ifdef CAPABILITY_MODE
+	     ((p->p_ucred & CRED_FLAG_CAPMODE) == 0) &&
+#endif /* !CAPABILITY_MODE */
 	    (imgp->vp->v_mount->mnt_flag & MNT_NOSUID) == 0 &&
 	    (p->p_flags & P_TRACED) == 0) {
 		/*

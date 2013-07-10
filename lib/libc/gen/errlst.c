@@ -150,6 +150,7 @@ const char *const sys_errlist[] = {
 	"Protocol error",			/* 92 - EPROTO */
 	"", 					/* 93 - ENOMEDIUM XXX ? */
 	"Capabilities insufficient",		/* 94 - ENOTCAPABLE */
+	"Not permitted in capability mode",	/* 95 - ECAPMODE */
 };
 __thread int errno;
 const int sys_nerr = sizeof(sys_errlist) / sizeof(sys_errlist[0]);
