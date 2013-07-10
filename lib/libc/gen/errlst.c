@@ -148,6 +148,7 @@ const char *const sys_errlist[] = {
 	"Link has been severed",		/* 91 - ENOLINK */
 	"Protocol error",			/* 92 - EPROTO */
 	"No medium found",			/* 93 - ENOMEDIUM */
+	"Capabilities insufficient",		/* 94 - ENOTCAPABLE */
 };
 __thread int errno;
 const int sys_nerr = sizeof(sys_errlist) / sizeof(sys_errlist[0]);

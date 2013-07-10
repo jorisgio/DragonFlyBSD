@@ -107,14 +107,12 @@
 #include <sys/capability.h>
 #endif
 
-static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps); /* !CAPABILITIES */
-void fsetfd_capcheck(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
+static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
 static void fdreserve_locked (struct filedesc *fdp, int fd0, int incr);
 static struct file *funsetfd_locked (struct filedesc *fdp, int fd, struct ioctls_list **tofree);
 static void ffree(struct file *fp);
 int holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag,
 	cap_rights_t needrights, int needfcntl);
-static struct file *getfp_locked(struct filedesc *fdp, int fd);
 
 static MALLOC_DEFINE(M_FILEDESC, "file desc", "Open file descriptor table");
 static MALLOC_DEFINE(M_FILEDESC_TO_LEADER, "file desc to leader",
@@ -151,12 +149,9 @@ void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
 ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
 void filecaps_clear(struct filecaps *fcaps);
 void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
-void ioctls_list_alloc(size_t ncmds);
-void filecaps_move(struct filecaps *src, struct filecaps *dst);
+static void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
 static void filecaps_fill(struct filecaps *fcaps);
-void ioctlshold(struct ioctls_list *l);
-void ioctlsdrop(struct ioctls_list *l);
 
 /*
  * Initialize filecaps structure.
@@ -268,7 +263,7 @@ filecaps_clear(struct filecaps *fcaps)
 /*
  * Move filecaps structure to the new place and clear the old place.
  */
-void
+static void
 filecaps_move(struct filecaps *src, struct filecaps *dst)
 {
 	*dst = *src;
@@ -2479,6 +2474,7 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 		*fpp = NULL;
 		goto done;
 	}
+#if 0
 	if ((needrights & CAP_FCNTL) != 0) {
 		error = cap_fcntl_check(fdp, fd, needfcntl);
 		if (error != 0) {
@@ -2486,6 +2482,7 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 			goto done;
 		}
 	}
+#endif
 #endif
 
 	fhold(*fpp);

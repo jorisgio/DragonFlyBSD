@@ -749,3 +749,13 @@
 				char *path2, int flags); }
 532	STD	BSD	{ int eaccess(char *path, int flags); }
 533	STD	BSD	{ int lpathconf(char *path, int name); }
+534	STD	BSD	{ int cap_getmode(u_int *modep); }
+535	STD	BSD	{ int cap_enter(void); }
+536	STD	BSD	{ int cap_rights_get(int fd, \
+				cap_rights_t *rightsp); }
+537	STD	BSD	{ int cap_rights_limit(int fd, \
+				cap_rights_t rights); }
+538	STD	BSD	{  int cap_ioctls_limit(int fd, \
+				const u_long *cmds, size_t ncmds); }
+539	STD	BSD	{ ssize_t cap_ioctls_get(int fd, \
+				u_long *cmds, size_t maxcmds); }

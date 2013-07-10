@@ -34,6 +34,7 @@
 AAC_DEBUG		opt_aac.h
 
 # Adaptec aic7xxx SCSI controller options
+#
 AHC_ALLOW_MEMIO		opt_aic7xxx.h	# Allow PCI devices to use memory
 					# mapped I/O
 
@@ -92,6 +93,7 @@ NSWBUF_MIN	opt_swap.h
 PPS_SYNC	opt_ntp.h
 QUOTA
 CAPABILITIES 	opt_capsicum.h
+CAPABILITY_MODE	opt_capsicum.h
 SUIDDIR		opt_suiddir.h
 SYSVMSG		opt_sysvipc.h
 SYSVSEM		opt_sysvipc.h
