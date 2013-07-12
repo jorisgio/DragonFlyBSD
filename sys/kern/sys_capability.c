@@ -81,7 +81,7 @@
 int
 sys_cap_enter(struct cap_enter_args *uap)
 {
-	struct ucred *newcred, *oldcred;
+	struct ucred *newcred;
 	struct proc *p = curproc;
 
 	if (IN_CAPABILITY_MODE(p))
@@ -89,13 +89,9 @@ sys_cap_enter(struct cap_enter_args *uap)
 
 	/* XXX it looks like credential are still protected by the proc_token */
 	lwkt_gettoken(&proc_token);
-	oldcred = p->p_ucred;
-	newcred = cratom(&oldcred);
+	newcred = cratom(&p->p_ucred);
 	newcred->cr_flags |= CRED_FLAG_CAPMODE;
-	p->p_ucred = newcred;
 	lwkt_reltoken(&proc_token);
-	crfree(oldcred);
-
 
 	return (0);
 }
