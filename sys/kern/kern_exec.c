@@ -453,7 +453,7 @@ interpret:
 	if ((((attr.va_mode & VSUID) && p->p_ucred->cr_uid != attr.va_uid) ||
 	     ((attr.va_mode & VSGID) && p->p_ucred->cr_gid != attr.va_gid)) &&
 #ifdef CAPABILITY_MODE
-	     ((p->p_ucred & CRED_FLAG_CAPMODE) == 0) &&
+	     ((p->p_ucred->cr_flags & CRED_FLAG_CAPMODE) == 0) &&
 #endif /* !CAPABILITY_MODE */
 	    (imgp->vp->v_mount->mnt_flag & MNT_NOSUID) == 0 &&
 	    (p->p_flags & P_TRACED) == 0) {
