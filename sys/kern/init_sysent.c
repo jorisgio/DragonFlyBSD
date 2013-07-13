@@ -570,4 +570,10 @@ struct sysent sysent[] = {
 	{ AS(linkat_args), (sy_call_t *)sys_linkat },	/* 531 = linkat */
 	{ AS(eaccess_args), (sy_call_t *)sys_eaccess },	/* 532 = eaccess */
 	{ AS(lpathconf_args), (sy_call_t *)sys_lpathconf },	/* 533 = lpathconf */
+	{ AS(cap_getmode_args), (sy_call_t *)sys_cap_getmode },	/* 534 = cap_getmode */
+	{ 0, (sy_call_t *)sys_cap_enter },		/* 535 = cap_enter */
+	{ AS(cap_rights_get_args), (sy_call_t *)sys_cap_rights_get },	/* 536 = cap_rights_get */
+	{ AS(cap_rights_limit_args), (sy_call_t *)sys_cap_rights_limit },	/* 537 = cap_rights_limit */
+	{ AS(cap_ioctls_limit_args), (sy_call_t *)sys_cap_ioctls_limit },	/* 538 = cap_ioctls_limit */
+	{ AS(cap_ioctls_get_args), (sy_call_t *)sys_cap_ioctls_get },	/* 539 = cap_ioctls_get */
 };

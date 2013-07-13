@@ -408,4 +408,10 @@ union sysunion {
 	struct	linkat_args linkat;
 	struct	eaccess_args eaccess;
 	struct	lpathconf_args lpathconf;
+	struct	cap_getmode_args cap_getmode;
+	struct	cap_enter_args cap_enter;
+	struct	cap_rights_get_args cap_rights_get;
+	struct	cap_rights_limit_args cap_rights_limit;
+	struct	cap_ioctls_limit_args cap_ioctls_limit;
+	struct	cap_ioctls_get_args cap_ioctls_get;
 };

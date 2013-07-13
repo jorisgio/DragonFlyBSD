@@ -542,4 +542,10 @@ const char *syscallnames[] = {
 	"linkat",			/* 531 = linkat */
 	"eaccess",			/* 532 = eaccess */
 	"lpathconf",			/* 533 = lpathconf */
+	"cap_getmode",			/* 534 = cap_getmode */
+	"cap_enter",			/* 535 = cap_enter */
+	"cap_rights_get",			/* 536 = cap_rights_get */
+	"cap_rights_limit",			/* 537 = cap_rights_limit */
+	"cap_ioctls_limit",			/* 538 = cap_ioctls_limit */
+	"cap_ioctls_get",			/* 539 = cap_ioctls_get */
 };
