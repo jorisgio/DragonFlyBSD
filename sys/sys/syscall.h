@@ -374,4 +374,10 @@
 #define	SYS_linkat	531
 #define	SYS_eaccess	532
 #define	SYS_lpathconf	533
-#define	SYS_MAXSYSCALL	534
+#define	SYS_cap_getmode	534
+#define	SYS_cap_enter	535
+#define	SYS_cap_rights_get	536
+#define	SYS_cap_rights_limit	537
+#define	SYS_cap_ioctls_limit	538
+#define	SYS_cap_ioctls_get	539
+#define	SYS_MAXSYSCALL	540

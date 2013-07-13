@@ -301,4 +301,10 @@ MIASM =  \
 	vquotactl.o \
 	linkat.o \
 	eaccess.o \
-	lpathconf.o
+	lpathconf.o \
+	cap_getmode.o \
+	cap_enter.o \
+	cap_rights_get.o \
+	cap_rights_limit.o \
+	cap_ioctls_limit.o \
+	cap_ioctls_get.o

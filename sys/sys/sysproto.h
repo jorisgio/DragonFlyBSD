@@ -2289,6 +2289,48 @@ struct	lpathconf_args {
 	char *	path;	char path_[PAD_(char *)];
 	int	name;	char name_[PAD_(int)];
 };
+struct	cap_getmode_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	u_int *	modep;	char modep_[PAD_(u_int *)];
+};
+struct	cap_enter_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	register_t dummy;
+};
+struct	cap_rights_get_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	cap_rights_t *	rightsp;	char rightsp_[PAD_(cap_rights_t *)];
+};
+struct	cap_rights_limit_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	cap_rights_t	rights;	char rights_[PAD_(cap_rights_t)];
+};
+struct	cap_ioctls_limit_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	const u_long *	cmds;	char cmds_[PAD_(const u_long *)];
+	size_t	ncmds;	char ncmds_[PAD_(size_t)];
+};
+struct	cap_ioctls_get_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	u_long *	cmds;	char cmds_[PAD_(u_long *)];
+	size_t	maxcmds;	char maxcmds_[PAD_(size_t)];
+};
 
 #ifdef COMPAT_43
 
@@ -2897,6 +2939,12 @@ int	sys_vquotactl (struct vquotactl_args *);
 int	sys_linkat (struct linkat_args *);
 int	sys_eaccess (struct eaccess_args *);
 int	sys_lpathconf (struct lpathconf_args *);
+int	sys_cap_getmode (struct cap_getmode_args *);
+int	sys_cap_enter (struct cap_enter_args *);
+int	sys_cap_rights_get (struct cap_rights_get_args *);
+int	sys_cap_rights_limit (struct cap_rights_limit_args *);
+int	sys_cap_ioctls_limit (struct cap_ioctls_limit_args *);
+int	sys_cap_ioctls_get (struct cap_ioctls_get_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_
