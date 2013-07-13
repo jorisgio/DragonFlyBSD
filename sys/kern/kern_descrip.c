@@ -2483,8 +2483,9 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 		}
 	}
 #endif
+#else
+	error = 0;
 #endif
-
 	fhold(*fpp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
