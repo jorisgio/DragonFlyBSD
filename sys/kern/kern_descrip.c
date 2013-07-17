@@ -2481,7 +2481,6 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 		*fpp = NULL;
 		goto done;
 	}
-#if 0
 	if ((needrights & CAP_FCNTL) != 0) {
 		error = cap_fcntl_check(fdp, fd, needfcntl);
 		if (error != 0) {
@@ -2489,7 +2488,6 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 			goto done;
 		}
 	}
-#endif
 #else
 	error = 0;
 #endif

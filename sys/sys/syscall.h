@@ -380,4 +380,6 @@
 #define	SYS_cap_rights_limit	537
 #define	SYS_cap_ioctls_limit	538
 #define	SYS_cap_ioctls_get	539
-#define	SYS_MAXSYSCALL	540
+#define	SYS_cap_fcntls_limit	540
+#define	SYS_cap_fcntls_get	541
+#define	SYS_MAXSYSCALL	542

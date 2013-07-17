@@ -759,3 +759,7 @@
 				const u_long *cmds, size_t ncmds); }
 539	STD	BSD	{ ssize_t cap_ioctls_get(int fd, \
 				u_long *cmds, size_t maxcmds); }
+540	STD	BSD	{ int cap_fcntls_limit(int fd, \
+				uint32_t fcntlrights); }
+541	STD	BSD	{ int cap_fcntls_get(int fd, \
+				uint32_t *fcntlrightsp); }

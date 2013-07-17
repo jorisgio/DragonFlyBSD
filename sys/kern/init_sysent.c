@@ -576,4 +576,6 @@ struct sysent sysent[] = {
 	{ AS(cap_rights_limit_args), (sy_call_t *)sys_cap_rights_limit },	/* 537 = cap_rights_limit */
 	{ AS(cap_ioctls_limit_args), (sy_call_t *)sys_cap_ioctls_limit },	/* 538 = cap_ioctls_limit */
 	{ AS(cap_ioctls_get_args), (sy_call_t *)sys_cap_ioctls_get },	/* 539 = cap_ioctls_get */
+	{ AS(cap_fcntls_limit_args), (sy_call_t *)sys_cap_fcntls_limit },	/* 540 = cap_fcntls_limit */
+	{ AS(cap_fcntls_get_args), (sy_call_t *)sys_cap_fcntls_get },	/* 541 = cap_fcntls_get */
 };
