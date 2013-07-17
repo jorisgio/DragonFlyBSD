@@ -76,6 +76,15 @@
 #if CAPABILITY_MODE
 
 /*
+ * System call not allowed in capability mode
+ */
+int
+sys_notcapable(struct sys_notcapable_args *uap)
+{
+	return (ENOTCAPABLE)
+}
+
+/*
  * System call to enter capability mode for the process.
  */
 int
@@ -209,7 +218,7 @@ sys_cap_rights_limit(struct cap_rights_limit_args *uap)
 
 	fdp = p->p_fd;
 	spin_lock(&fdp->fd_spin);
-	if (getfp_locked(fdp, fd) == NULL) {
+	if (fdvalidate(fdp, fd)) {
 		spin_unlock(&fdp->fd_spin);
 		return (EBADF);
 	}
@@ -247,7 +256,7 @@ sys_cap_rights_get(struct cap_rights_get_args *uap)
 
 	fdp = p->p_fd;
 	spin_lock(&fdp->fd_spin);
-	if (getfp_locked(fdp, fd) == NULL) {
+	if (fdvalidate(fdp, fd)) {
 		spin_lock(&fdp->fd_spin);
 		return (EBADF);
 	}
@@ -345,7 +354,7 @@ sys_cap_ioctls_limit(struct cap_ioctls_limit_args *uap)
 
 	fdp = p->p_fd;
 	spin_lock_shared(&fdp->fd_spin);
-	if (getfp_locked(fdp, fd) == NULL) {
+	if (fdvalidate(fdp, fd)) {
 		error = EBADF;
 		spin_unlock_shared(&fdp->fd_spin);
 		goto out;
@@ -386,7 +395,7 @@ sys_cap_ioctls_get(struct cap_ioctls_get_args *uap)
 	fdp = p->p_fd;
 
 	spin_lock_shared(&fdp->fd_spin);
-	if (getfp_locked(fdp, fd) == NULL) {
+	if (fdvalidate(fdp, fd)) {
 		error = EBADF;
 		goto out;
 	}
