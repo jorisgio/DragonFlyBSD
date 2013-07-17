@@ -43,6 +43,7 @@
 #include <sys/errno.h>
 #include <sys/sysctl.h>
 #include <sys/file.h>
+#include <sys/capability.h>
 #include <sys/uio.h>
 #include <sys/socketvar.h>
 #include <sys/socket.h>
@@ -424,7 +425,7 @@ i_setsoc(isc_session_t *sp, int fd, struct thread *td)
 
      debug_called(8);
 
-     if ((error = holdsock(td->td_proc->p_fd, fd, &fp)) == 0) {
+     if ((error = holdsock(td->td_proc->p_fd, fd, CAP_SOCK_CLIENT, &fp)) == 0) {
 	  sp->soc = fp->f_data;
 	  sp->fp = fp;
 	  isc_start_receiver(sp);

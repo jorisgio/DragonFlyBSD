@@ -44,6 +44,7 @@
 #include <sys/proc.h>
 #include <sys/filedesc.h>
 #include <sys/file.h>
+#include <sys/capability.h>
 #include <sys/vnode.h>
 #include <sys/mount.h>
 #include <sys/malloc.h>
@@ -90,7 +91,8 @@ portal_mount(struct mount *mp, char *path, caddr_t data, struct ucred *cred)
 		return (error);
 
 	KKASSERT(curproc != NULL);
-	error = holdsock(curproc->p_fd, args.pa_socket, &fp);
+	/* XXX capsicum : determine which capabilities are needed */
+	error = holdsock(curproc->p_fd, args.pa_socket, CAP_NONE, &fp);
 	if (error)
 		return (error);
 	so = (struct socket *) fp->f_data;

@@ -40,6 +40,7 @@
 #include <sys/sysctl.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
+#include <sys/capability.h>
 #include <sys/vnode.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
@@ -190,7 +191,7 @@ sys_nfssvc(struct nfssvc_args *uap)
 		error = copyin(uap->argp, (caddr_t)&nfsdarg, sizeof(nfsdarg));
 		if (error)
 			goto done;
-		error = holdsock(td->td_proc->p_fd, nfsdarg.sock, &fp);
+		error = holdsock(td->td_proc->p_fd, nfsdarg.sock, CAP_SOCK_SERVER, &fp);
 		if (error)
 			goto done;
 		/*
