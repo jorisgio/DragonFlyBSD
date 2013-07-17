@@ -63,6 +63,7 @@
 #include <sys/kern_syscall.h>
 #include <sys/objcache.h>
 #include <sys/sysctl.h>
+#include <sys/capability.h>
 
 #include <sys/buf2.h>
 #include <sys/file2.h>
@@ -1194,7 +1195,7 @@ kern_fstatfs(int fd, struct statfs *buf)
 	int error;
 
 	KKASSERT(p);
-	if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, fd, CAP_FSTATFS, &fp)) != 0)
 		return (error);
 
 	/*
@@ -1307,7 +1308,7 @@ kern_fstatvfs(int fd, struct statvfs *buf)
 	int error;
 
 	KKASSERT(p);
-	if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, fd, CAP_FSTATFS, &fp)) != 0)
 		return (error);
 	if ((mp = fp->f_nchandle.mount) == NULL)
 		mp = ((struct vnode *)fp->f_data)->v_mount;
@@ -1565,7 +1566,7 @@ sys_fchdir(struct fchdir_args *uap)
 	struct nchandle nch, onch, tnch;
 	int error;
 
-	if ((error = holdvnode(fdp, uap->fd, &fp)) != 0)
+	if ((error = holdvnode(fdp, uap->fd, CAP_FCHDIR, &fp)) != 0)
 		return (error);
 	lwkt_gettoken(&p->p_token);
 	vp = (struct vnode *)fp->f_data;
@@ -1686,7 +1687,8 @@ chroot_refuse_vdir_fds(struct filedesc *fdp)
 	int fd;
 
 	for (fd = 0; fd < fdp->fd_nfiles ; fd++) {
-		if ((error = holdvnode(fdp, fd, &fp)) != 0)
+		/* XXX do we really need no capability ? */
+		if ((error = holdvnode(fdp, fd, CAP_NONE, &fp)) != 0)
 			continue;
 		vp = (struct vnode *)fp->f_data;
 		if (vp->v_type != VDIR) {
@@ -3060,7 +3062,7 @@ sys_fchflags(struct fchflags_args *uap)
 	struct file *fp;
 	int error;
 
-	if ((error = holdvnode(p->p_fd, uap->fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, uap->fd, CAP_FCHFLAGS, &fp)) != 0)
 		return (error);
 	if (fp->f_nchandle.ncp)
 		error = ncp_writechk(&fp->f_nchandle);
@@ -3155,7 +3157,7 @@ sys_fchmod(struct fchmod_args *uap)
 	struct file *fp;
 	int error;
 
-	if ((error = holdvnode(p->p_fd, uap->fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, uap->fd, CAP_FCHMOD, &fp)) != 0)
 		return (error);
 	if (fp->f_nchandle.ncp)
 		error = ncp_writechk(&fp->f_nchandle);
@@ -3295,7 +3297,7 @@ sys_fchown(struct fchown_args *uap)
 	struct file *fp;
 	int error;
 
-	if ((error = holdvnode(p->p_fd, uap->fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, uap->fd, CAP_FCHOWN, &fp)) != 0)
 		return (error);
 	if (fp->f_nchandle.ncp)
 		error = ncp_writechk(&fp->f_nchandle);
@@ -3471,7 +3473,7 @@ kern_futimes(int fd, struct timeval *tptr)
 	error = getutimes(tptr, ts);
 	if (error)
 		return (error);
-	if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, fd, CAP_FUTIMES, &fp)) != 0)
 		return (error);
 	if (fp->f_nchandle.ncp)
 		error = ncp_writechk(&fp->f_nchandle);
@@ -3596,7 +3598,7 @@ kern_ftruncate(int fd, off_t length)
 
 	if (length < 0)
 		return(EINVAL);
-	if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, fd, CAP_FTRUNCATE, &fp)) != 0)
 		return (error);
 	if (fp->f_nchandle.ncp) {
 		error = ncp_writechk(&fp->f_nchandle);
@@ -3669,7 +3671,7 @@ sys_fsync(struct fsync_args *uap)
 	vm_object_t obj;
 	int error;
 
-	if ((error = holdvnode(p->p_fd, uap->fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, uap->fd, CAP_FSYNC, &fp)) != 0)
 		return (error);
 	vp = (struct vnode *)fp->f_data;
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
@@ -4052,7 +4054,7 @@ kern_getdirentries(int fd, char *buf, u_int count, long *basep, int *res,
 	off_t loff;
 	int error, eofflag;
 
-	if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+	if ((error = holdvnode(p->p_fd, fd, CAP_READ, &fp)) != 0)
 		return (error);
 	if ((fp->f_flag & FREAD) == 0) {
 		error = EBADF;
