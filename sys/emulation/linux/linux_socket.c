@@ -34,6 +34,7 @@
 #include <sys/sysproto.h>
 #include <sys/fcntl.h>
 #include <sys/file.h>
+#include <sys/capability.h>
 #include <sys/kern_syscall.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
@@ -374,7 +375,7 @@ linux_connect(struct linux_connect_args *args, int *res)
 	 * when on a non-blocking socket. Instead it returns the
 	 * error getsockopt(SOL_SOCKET, SO_ERROR) would return on BSD.
 	 */
-	error = holdsock(p->p_fd, linux_args.s, &fp);
+	error = holdsock(p->p_fd, linux_args.s, CAP_CONNECT, &fp);
 	if (error)
 		return (error);
 	error = EISCONN;

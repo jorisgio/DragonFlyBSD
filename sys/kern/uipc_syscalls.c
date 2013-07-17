@@ -35,6 +35,7 @@
 
 #include "opt_ktrace.h"
 #include "opt_sctp.h"
+#include "opt_capsicum.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -58,6 +59,7 @@
 #include <sys/vnode.h>
 #include <sys/lock.h>
 #include <sys/mount.h>
+#include <sys/capability.h>
 #ifdef KTRACE
 #include <sys/ktrace.h>
 #endif
@@ -144,7 +146,7 @@ kern_bind(int s, struct sockaddr *sa)
 	int error;
 
 	KKASSERT(p);
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_BIND, &fp);
 	if (error)
 		return (error);
 	error = sobind((struct socket *)fp->f_data, sa, td);
@@ -181,7 +183,7 @@ kern_listen(int s, int backlog)
 	int error;
 
 	KKASSERT(p);
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_LISTEN, &fp);
 	if (error)
 		return (error);
 	error = solisten((struct socket *)fp->f_data, backlog, td);
@@ -273,7 +275,7 @@ kern_accept(int s, int fflags, struct sockaddr **name, int *namelen, int *res)
 	if (name && namelen && *namelen < 0)
 		return (EINVAL);
 
-	error = holdsock(td->td_proc->p_fd, s, &lfp);
+	error = holdsock(td->td_proc->p_fd, s, CAP_ACCEPT, &lfp);
 	if (error)
 		return (error);
 
@@ -496,7 +498,7 @@ kern_connect(int s, int fflags, struct sockaddr *sa)
 	struct socket *so;
 	int error, interrupted = 0;
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_CONNECT, &fp);
 	if (error)
 		return (error);
 	so = (struct socket *)fp->f_data;
@@ -678,13 +680,22 @@ kern_sendmsg(int s, struct sockaddr *sa, struct uio *auio,
 	struct file *fp;
 	size_t len;
 	int error;
+	cap_rights_t rights;
 	struct socket *so;
 #ifdef KTRACE
 	struct iovec *ktriov = NULL;
 	struct uio ktruio;
 #endif
 
-	error = holdsock(p->p_fd, s, &fp);
+#ifdef CAPABILITIES
+	rights = CAP_SEND;
+	if (sa)
+		rights |= CAP_CONNECT;
+#else
+	rights = 0;
+#endif /* CAPABILITIES */
+
+	error = holdsock(p->p_fd, s, rights, &fp);
 	if (error)
 		return (error);
 #ifdef KTRACE
@@ -742,6 +753,10 @@ sys_sendto(struct sendto_args *uap)
 	int error;
 
 	if (uap->to) {
+#ifdef CAPABILITY_MODE
+		if (IN_CAPABILITY_MODE(td->td_proc))
+			return (ECAPMODE);
+#endif /* !CAPABILITY_MODE */
 		error = getsockaddr(&sa, uap->to, uap->tolen);
 		if (error)
 			return (error);
@@ -788,6 +803,10 @@ sys_sendmsg(struct sendmsg_args *uap)
 	 * Conditionally copyin msg.msg_name.
 	 */
 	if (msg.msg_name) {
+#ifdef CAPABILITY_MODE
+		if (IN_CAPABILITY_MODE(td->td_proc))
+			return (ECAPMODE);
+#endif /* !CAPABILITY_MODE */
 		error = getsockaddr(&sa, msg.msg_name, msg.msg_namelen);
 		if (error)
 			return (error);
@@ -862,7 +881,7 @@ kern_recvmsg(int s, struct sockaddr **sa, struct uio *auio,
 	struct uio ktruio;
 #endif
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_RECV, &fp);
 	if (error)
 		return (error);
 #ifdef KTRACE
@@ -1103,7 +1122,7 @@ kern_setsockopt(int s, struct sockopt *sopt)
 	if (sopt->sopt_valsize > SOMAXOPT_SIZE)	/* unsigned */
 		return (EINVAL);
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_SETSOCKOPT, &fp);
 	if (error)
 		return (error);
 
@@ -1166,7 +1185,7 @@ kern_getsockopt(int s, struct sockopt *sopt)
 	if (sopt->sopt_valsize > SOMAXOPT_SIZE) /* unsigned */
 		return (EINVAL);
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_GETSOCKOPT, &fp);
 	if (error)
 		return (error);
 
@@ -1241,7 +1260,7 @@ kern_getsockname(int s, struct sockaddr **name, int *namelen)
 	struct sockaddr *sa = NULL;
 	int error;
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_GETSOCKNAME, &fp);
 	if (error)
 		return (error);
 	if (*namelen < 0) {
@@ -1307,7 +1326,7 @@ kern_getpeername(int s, struct sockaddr **name, int *namelen)
 	struct sockaddr *sa = NULL;
 	int error;
 
-	error = holdsock(p->p_fd, s, &fp);
+	error = holdsock(p->p_fd, s, CAP_GETPEERNAME, &fp);
 	if (error)
 		return (error);
 	if (*namelen < 0) {
@@ -1566,7 +1585,7 @@ kern_sendfile(struct vnode *vp, int sfd, off_t offset, size_t nbytes,
 		error = EINVAL;
 		goto done0;
 	}
-	error = holdsock(p->p_fd, sfd, &fp);
+	error = holdsock(p->p_fd, sfd, CAP_PREAD, &fp);
 	if (error)
 		goto done0;
 	so = (struct socket *)fp->f_data;
@@ -1858,7 +1877,7 @@ sys_sctp_peeloff(struct sctp_peeloff_args *uap)
 	short fflag;		/* type must match fp->f_flag */
 
 	assoc_id = uap->name;
-	error = holdsock(td->td_proc->p_fd, uap->sd, &lfp);
+	error = holdsock(td->td_proc->p_fd, uap->sd, CAP_PEELOFF, &lfp);
 	if (error)
 		return (error);
 
