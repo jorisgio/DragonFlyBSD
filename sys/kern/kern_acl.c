@@ -46,6 +46,7 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 #include <sys/acl.h>
+#include <sys/capability.h>
 
 #include <sys/mplock2.h>
 
@@ -215,7 +216,8 @@ sys___acl_get_fd(struct __acl_get_fd_args *uap)
 	int error;
 
 	KKASSERT(td->td_proc);
-	if ((error = holdvnode(td->td_proc->p_fd, uap->filedes, &fp)) != 0)
+	error = holdvnode(td->td_proc->p_fd, uap->filedes, CAP_ACL_GET, &fp);
+	if (error)
 		return(error);
 	get_mplock();
 	error = vacl_get_acl((struct vnode *)fp->f_data, uap->type, uap->aclp);
@@ -238,7 +240,8 @@ sys___acl_set_fd(struct __acl_set_fd_args *uap)
 	int error;
 
 	KKASSERT(td->td_proc);
-	if ((error = holdvnode(td->td_proc->p_fd, uap->filedes, &fp)) != 0)
+	error = holdvnode(td->td_proc->p_fd, uap->filedes, CAP_ACL_SET, &fp);
+	if (error)
 		return(error);
 	get_mplock();
 	error = vacl_set_acl((struct vnode *)fp->f_data, uap->type, uap->aclp);
@@ -290,7 +293,8 @@ sys___acl_delete_fd(struct __acl_delete_fd_args *uap)
 	int error;
 
 	KKASSERT(td->td_proc);
-	if ((error = holdvnode(td->td_proc->p_fd, uap->filedes, &fp)) != 0)
+	error = holdvnode(td->td_proc->p_fd, uap->filedes, CAP_ACL_DELETE, &fp);
+	if (error)
 		return(error);
 	get_mplock();
 	error = vacl_delete((struct vnode *)fp->f_data, uap->type);
@@ -341,7 +345,8 @@ sys___acl_aclcheck_fd(struct __acl_aclcheck_fd_args *uap)
 	int error;
 
 	KKASSERT(td->td_proc);
-	if ((error = holdvnode(td->td_proc->p_fd, uap->filedes, &fp)) != 0)
+	error = holdvnode(td->td_proc->p_fd, uap->filedes, CAP_ACL_CHECK, &fp);
+	if (error)
 		return(error);
 	get_mplock();
 	error = vacl_aclcheck((struct vnode *)fp->f_data, uap->type, uap->aclp);

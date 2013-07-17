@@ -54,6 +54,7 @@
 #include <sys/stat.h>
 #include <sys/vnode.h>
 #include <sys/file2.h>
+#include <sys/capability.h>
 
 #include <machine/limits.h>
 
@@ -383,7 +384,7 @@ fdesc_setattr(struct vop_setattr_args *ap)
 	/*
 	 * Allow setattr where there is an underlying vnode.
 	 */
-	error = holdvnode(p->p_fd, fd, &fp);
+	error = holdvnode(p->p_fd, fd, CAP_EXTATTR_SET, &fp);
 	if (error) {
 		/*
 		 * holdvnode() returns EINVAL if the file descriptor is not
