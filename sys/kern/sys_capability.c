@@ -424,7 +424,6 @@ out:
 	return (error);
 }
 
-#if 0
 /*
  * Test whether a capability grants the given fcntl command.
  */
@@ -433,77 +432,73 @@ cap_fcntl_check(struct filedesc *fdp, int fd, int cmd)
 {
 	uint32_t fcntlcap;
 
-	KASSERT(fd >= 0 && fd < fdp->fd_nfiles,
+	KASSERT(fdvalidate(fdp, fd) == 0,
 	    ("%s: invalid fd=%d", __func__, fd));
 
 	fcntlcap = (1 << cmd);
 	KASSERT((CAP_FCNTL_ALL & fcntlcap) != 0,
 	    ("Unsupported fcntl=%d.", cmd));
 
-	if ((fdp->fd_ofiles[fd].fde_fcntls & fcntlcap) != 0)
+	if ((fdp->fd_files[fd].fcaps.fc_fcntls & fcntlcap) != 0)
 		return (0);
 
 	return (ENOTCAPABLE);
 }
 
 int
-sys_cap_fcntls_limit(struct thread *td, struct cap_fcntls_limit_args *uap)
+sys_cap_fcntls_limit(struct cap_fcntls_limit_args *uap)
 {
 	struct filedesc *fdp;
+	struct proc *p = curproc;
 	uint32_t fcntlrights;
 	int fd;
 
 	fd = uap->fd;
 	fcntlrights = uap->fcntlrights;
 
-	AUDIT_ARG_FD(fd);
-	AUDIT_ARG_FCNTL_RIGHTS(fcntlrights);
-
 	if ((fcntlrights & ~CAP_FCNTL_ALL) != 0)
 		return (EINVAL);
 
-	fdp = td->td_proc->p_fd;
-	FILEDESC_XLOCK(fdp);
+	fdp = p->p_fd;
+	spin_lock(&fdp->fd_spin);
 
-	if (fget_locked(fdp, fd) == NULL) {
-		FILEDESC_XUNLOCK(fdp);
+	if (fdvalidate(fdp, fd)) {
+		spin_unlock(&fdp->fd_spin);
 		return (EBADF);
 	}
 
-	if ((fcntlrights & ~fdp->fd_ofiles[fd].fde_fcntls) != 0) {
-		FILEDESC_XUNLOCK(fdp);
+	if ((fcntlrights & ~fdp->fd_files[fd].fcaps.fc_fcntls) != 0) {
+		spin_unlock(&fdp->fd_spin);
 		return (ENOTCAPABLE);
 	}
 
-	fdp->fd_ofiles[fd].fde_fcntls = fcntlrights;
-	FILEDESC_XUNLOCK(fdp);
+	fdp->fd_files[fd].fcaps.fc_fcntls = fcntlrights;
+	spin_unlock(&fdp->fd_spin);
 
 	return (0);
 }
 
 int
-sys_cap_fcntls_get(struct thread *td, struct cap_fcntls_get_args *uap)
+sys_cap_fcntls_get(struct cap_fcntls_get_args *uap)
 {
 	struct filedesc *fdp;
+	struct proc *p = curproc;
 	uint32_t rights;
 	int fd;
 
 	fd = uap->fd;
 
-	AUDIT_ARG_FD(fd);
-
-	fdp = td->td_proc->p_fd;
-	FILEDESC_SLOCK(fdp);
+	fdp = p->p_fd;
+	spin_lock_shared(&fdp->fd_spin);
 	if (fget_locked(fdp, fd) == NULL) {
-		FILEDESC_SUNLOCK(fdp);
+		spin_unlock_shared(&fdp->fd_spin);
 		return (EBADF);
 	}
-	rights = fdp->fd_ofiles[fd].fde_fcntls;
-	FILEDESC_SUNLOCK(fdp);
+	rights = fdp->fd_files[fd].fcaps.fc_fcntls;
+	spin_unlock_shared(&fdp->fd_spin);
 
 	return (copyout(&rights, uap->fcntlrightsp, sizeof(rights)));
 }
-#endif
 
 #else /* !CAPABILITIES */
 

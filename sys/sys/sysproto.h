@@ -2331,6 +2331,20 @@ struct	cap_ioctls_get_args {
 	u_long *	cmds;	char cmds_[PAD_(u_long *)];
 	size_t	maxcmds;	char maxcmds_[PAD_(size_t)];
 };
+struct	cap_fcntls_limit_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	uint32_t	fcntlrights;	char fcntlrights_[PAD_(uint32_t)];
+};
+struct	cap_fcntls_get_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+	uint32_t *	fcntlrightsp;	char fcntlrightsp_[PAD_(uint32_t *)];
+};
 
 #ifdef COMPAT_43
 
@@ -2945,6 +2959,8 @@ int	sys_cap_rights_get (struct cap_rights_get_args *);
 int	sys_cap_rights_limit (struct cap_rights_limit_args *);
 int	sys_cap_ioctls_limit (struct cap_ioctls_limit_args *);
 int	sys_cap_ioctls_get (struct cap_ioctls_get_args *);
+int	sys_cap_fcntls_limit (struct cap_fcntls_limit_args *);
+int	sys_cap_fcntls_get (struct cap_fcntls_get_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_

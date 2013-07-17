@@ -306,7 +306,6 @@ int cap_ioctls_limit(int fd, const unsigned long *cmds, size_t ncmds);
  * the function returns CAP_IOCTLS_ALL.
  */
 ssize_t cap_ioctls_get(int fd, unsigned long *cmds, size_t maxcmds);
-#if 0
 /*
  * Limits allowed fcntls for the given descriptor (CAP_FCNTL_*).
  */
@@ -315,7 +314,6 @@ int cap_fcntls_limit(int fd, uint32_t fcntlrights);
  * Returns bitmask of allowed fcntls for the given descriptor.
  */
 int cap_fcntls_get(int fd, uint32_t *fcntlrightsp);
-#endif
 
 __END_DECLS
 
