@@ -2426,13 +2426,17 @@ fdfree(struct proc *p, struct filedesc *repl)
 	kfree(fdp, M_FILEDESC);
 }
 
-struct file *
-getfp_locked(struct filedesc *fdp, int fd)
+/*
+ * check if the fd points to a valid file pointer
+ * returns 0 if the fd is valid
+ */
+int
+fdvalidate(struct filedesc *fdp, int fd)
 {
 	if (((u_int)fd) >= fdp->fd_nfiles) {
-		return (NULL);
+		return (1);
 	}
-	return fdp->fd_files[fd].fp;
+	return (fdp->fd_files[fd].fp == NULL);
 }
 
 /*
@@ -2453,11 +2457,14 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 	}
 
 	spin_lock_shared(&fdp->fd_spin);
-
-	*fpp = getfp_locked(fdp, fd);
-
-	if (*fpp == NULL) {
+	if ((unsigned)fd >= fdp->fd_nfiles) {
 		error = EBADF;
+		*fpp = NULL;
+		goto done;
+	}
+	if ((fp = fdp->fd_files[fd].fp) == NULL) {
+		error = EBADF;
+		*fpp = NULL;
 		goto done;
 	}
 
@@ -2498,10 +2505,14 @@ holdfp(struct filedesc *fdp, int fd, int flag) {
 	struct file *fp;
 
 	spin_lock_shared(&fdp->fd_spin);
-
-	fp = getfp_locked(fdp, fd);
-
-	if (fp == NULL) {
+	if ((unsigned)fd >= fdp->fd_nfiles) {
+		error = EBADF;
+		fp = NULL;
+		goto done;
+	}
+	if ((fp = fdp->fd_files[fd].fp) == NULL) {
+		error = EBADF;
+		fp = NULL;
 		goto done;
 	}
 
@@ -2524,9 +2535,12 @@ done:
  * MPSAFE
  */
 int
-holdsock(struct filedesc *fdp, int fd, struct file **fpp)
+holdsock(struct filedesc *fdp, int fd, cap_rights_t needrights, struct file **fpp)
 {
 	struct file *fp;
+#ifdef CAPABILITIES
+	cap_rights_t haverights;
+#endif
 	int error;
 
 	spin_lock_shared(&fdp->fd_spin);
@@ -2537,14 +2551,25 @@ holdsock(struct filedesc *fdp, int fd, struct file **fpp)
 	}
 	if ((fp = fdp->fd_files[fd].fp) == NULL) {
 		error = EBADF;
+		fp = NULL;
 		goto done;
 	}
 	if (fp->f_type != DTYPE_SOCKET) {
 		error = ENOTSOCK;
+		fp = NULL;
 		goto done;
 	}
-	fhold(fp);
+#ifdef CAPABILITIES
+	haverights = cap_rights(fdp, fd);
+	error = cap_check(haverights, needrights);
+	if (error != 0) {
+		fp = NULL;
+		goto done;
+	}
+#else
 	error = 0;
+#endif /* !CAPABILITIES */
+	fhold(fp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
 	*fpp = fp;
@@ -2557,9 +2582,12 @@ done:
  * MPSAFE
  */
 int
-holdvnode(struct filedesc *fdp, int fd, struct file **fpp)
+holdvnode(struct filedesc *fdp, int fd, cap_rights_t needrights, struct file **fpp)
 {
 	struct file *fp;
+#ifdef CAPABILITIES
+	cap_rights_t haverights;
+#endif
 	int error;
 
 	spin_lock_shared(&fdp->fd_spin);
@@ -2570,6 +2598,7 @@ holdvnode(struct filedesc *fdp, int fd, struct file **fpp)
 	}
 	if ((fp = fdp->fd_files[fd].fp) == NULL) {
 		error = EBADF;
+		fp = NULL;
 		goto done;
 	}
 	if (fp->f_type != DTYPE_VNODE && fp->f_type != DTYPE_FIFO) {
@@ -2577,8 +2606,17 @@ holdvnode(struct filedesc *fdp, int fd, struct file **fpp)
 		error = EINVAL;
 		goto done;
 	}
-	fhold(fp);
+#ifdef CAPABILITIES
+	haverights = cap_rights(fdp, fd);
+	error = cap_check(haverights, needrights);
+	if (error != 0) {
+		fp = NULL;
+		goto done;
+	}
+#else
 	error = 0;
+#endif /* !CAPABILITIES */
+	fhold(fp);
 done:
 	spin_unlock_shared(&fdp->fd_spin);
 	*fpp = fp;

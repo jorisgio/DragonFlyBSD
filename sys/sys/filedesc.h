@@ -201,7 +201,7 @@ filedesc_to_leader_alloc(struct filedesc_to_leader *old,
 
 /* CAPABILITIES */
 void fsetfd_capcheck(struct filedesc *fdp, struct file *fp, int fd, struct filecaps *fcaps);
-struct file *getfp_locked(struct filedesc *fdp, int fd);
+int fdvalidate(struct filedesc *fdp, int fd);
 void ioctlshold(struct ioctls_list *l);
 void ioctlsdrop(struct ioctls_list *l);
 struct ioctls_list * ioctls_list_alloc(size_t ncmds);
