@@ -2433,7 +2433,7 @@ holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag, cap_r
 		*fpp = NULL;
 		goto done;
 	}
-	if ((fp = fdp->fd_files[fd].fp) == NULL) {
+	if ((*fpp = fdp->fd_files[fd].fp) == NULL) {
 		error = EBADF;
 		*fpp = NULL;
 		goto done;
@@ -2475,12 +2475,10 @@ holdfp(struct filedesc *fdp, int fd, int flag) {
 
 	spin_lock_shared(&fdp->fd_spin);
 	if ((unsigned)fd >= fdp->fd_nfiles) {
-		error = EBADF;
 		fp = NULL;
 		goto done;
 	}
 	if ((fp = fdp->fd_files[fd].fp) == NULL) {
-		error = EBADF;
 		fp = NULL;
 		goto done;
 	}
