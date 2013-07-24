@@ -75,6 +75,7 @@
 
 #if CAPABILITY_MODE
 
+#if 0
 /*
  * System call not allowed in capability mode
  */
@@ -83,6 +84,7 @@ sys_notcapable(struct sys_notcapable_args *uap)
 {
 	return (ENOTCAPABLE)
 }
+#endif
 
 /*
  * System call to enter capability mode for the process.
@@ -490,7 +492,7 @@ sys_cap_fcntls_get(struct cap_fcntls_get_args *uap)
 
 	fdp = p->p_fd;
 	spin_lock_shared(&fdp->fd_spin);
-	if (fget_locked(fdp, fd) == NULL) {
+	if (fdvalidate(fdp, fd)) {
 		spin_unlock_shared(&fdp->fd_spin);
 		return (EBADF);
 	}
