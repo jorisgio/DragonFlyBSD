@@ -79,6 +79,7 @@ struct nlookupdata {
 	struct nchandle nl_nch;		/* start-point and result */
 	struct nchandle nl_rootnch;	/* root directory */
 	struct nchandle nl_jailnch;	/* jail directory */
+	struct nchandle nl_sandroot;	/* sandbox root for capsicum */
 
 	char 		*nl_path;	/* path buffer */
 	struct thread	*nl_td;		/* thread requesting the nlookup */
@@ -116,7 +117,7 @@ struct nlookupdata {
 #define NLC_TRUNCATE		0x00000800	/* do truncation checks */
 #define NLC_HLINK		0x00001000	/* do hardlink checks */
 #define NLC_RENAME_SRC		0x00002000	/* do rename checks (source) */
-#define NLC_UNUSED00004000	0x00004000
+#define NLC_STRICTLYRELATIVE	0x00004000	/* do not allow .. */
 #define NLC_UNUSED00008000	0x00008000
 #define NLC_NFS_RDONLY		0x00010000	/* set by nfs_namei() only */
 #define NLC_NFS_NOSOFTLINKTRAV	0x00020000	/* do not traverse softlnks */

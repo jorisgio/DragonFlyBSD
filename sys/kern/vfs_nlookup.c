@@ -50,6 +50,7 @@
  */
 
 #include "opt_ktrace.h"
+#include "opt_capsicum.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,6 +65,7 @@
 #include <sys/stat.h>
 #include <sys/objcache.h>
 #include <sys/file.h>
+#include <sys/capability.h>
 
 #ifdef KTRACE
 #include <sys/ktrace.h>
@@ -71,6 +73,8 @@
 
 static int naccess(struct nchandle *nch, int vmode, struct ucred *cred,
 		int *stickyp);
+static int isstillinsandbox(struct nchandle root, struct nchandle parent,
+			struct nchandle child);
 
 /*
  * Initialize a nlookup() structure, early error return for copyin faults
@@ -110,6 +114,16 @@ nlookup_init(struct nlookupdata *nd,
      */
     if (error == 0 && pathlen <= 1)
 	error = ENOENT;
+
+#ifndef CAPABILITY_MODE
+		/*
+		 * In capability mode, lookups must be strictly relative
+		 * Relative lookups from current working directory are not
+		 * allowed either, but we cannot check that here.
+		 */
+		if (IN_CAPABILITY_MODE(p))
+			nd->nl_flags |= NLC_STRICTLYRELATIVE;
+#endif
 
     if (error == 0) {
 	if (p && p->p_fd) {
@@ -160,8 +174,9 @@ nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd,
 		return (error);
 	}
 
+
 	if (nd->nl_path[0] != '/' && fd != AT_FDCWD) {
-		if ((error = holdvnode(p->p_fd, fd, &fp)) != 0)
+		if ((error = holdvnode(p->p_fd, fd, CAP_LOOKUP, &fp)) != 0)
 			goto done;
 		vp = (struct vnode*)fp->f_data;
 		if (vp->v_type != VDIR || fp->f_nchandle.ncp == NULL) {
@@ -173,7 +188,18 @@ nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd,
 		cache_drop(&nd->nl_nch);
 		cache_copy(&fp->f_nchandle, &nd->nl_nch);
 		*fpp = fp;
+#ifndef CAPABILITY_MODE
 	}
+#else /* CAPABILITY_MODE */
+	} else {
+		if (IN_CAPABILITY_MODE(p)) {
+			/*
+			 * Only relative lookups are allowed in capability mode
+			 */
+			return (ECAPMODE);
+		}
+	}
+#endif
 
 
 done:
@@ -213,6 +239,16 @@ nlookup_init_raw(struct nlookupdata *nd,
      */
     if (error == 0 && pathlen <= 1)
 	error = ENOENT;
+
+#ifdef CAPABILITY_MODE
+    /*
+     * In capability mode, lookups must be strictly relative
+     * Relative lookups from current working directory are not
+     * allowed either, but we cannot check that here.
+     */
+    if (cred->cr_flags & CRED_FLAG_CAPMODE)
+	    nd->nl_flags |= NLC_STRICTLYRELATIVE;
+#endif
 
     if (error == 0) {
 	cache_copy(ncstart, &nd->nl_nch);
@@ -257,6 +293,16 @@ nlookup_init_root(struct nlookupdata *nd,
      */
     if (error == 0 && pathlen <= 1)
 	error = ENOENT;
+
+#ifdef CAPABILITY_MODE
+    /*
+     * In capability mode, lookups must be strictly relative
+     * Relative lookups from current working directory are not
+     * allowed either, but we cannot check that here.
+     */
+    if (cred->cr_flags & CRED_FLAG_CAPMODE)
+	    nd->nl_flags |= NLC_STRICTLYRELATIVE;
+#endif
 
     if (error == 0) {
 	cache_copy(ncstart, &nd->nl_nch);
@@ -380,6 +426,60 @@ nlookup_simple(const char *str, enum uio_seg seg,
 }
 
 /*
+ * Check if child nch is under parent nch in the hierarchy
+ */
+static int
+isstillinsandbox(struct nchandle root, struct nchandle parent,
+			struct nchandle child)
+{
+	struct nchandle nch;
+	struct nchandle next;
+	struct mount *mp;
+
+	nch = child;
+
+	while (nch.ncp && nch.ncp != root.ncp && nch.ncp != parent.ncp) {
+		mp = NULL;
+
+		/*
+		 * If we encouter the root of the filesystem, skip to the
+		 * mountpoint;
+		 */
+		if (nch.ncp == nch.mount->mnt_ncmountpt.ncp) {
+			mp = nch.mount;
+			nch = mp->mnt_ncmounton;
+			cache_drop(&nch);
+			if (nch.ncp)
+				cache_hold(&nch);
+			continue;
+		}
+
+		/*
+		 * go one directory up
+		 */
+		while ((next.ncp = nch.ncp->nc_parent) != NULL) {
+			cache_lock(&nch);
+			if (next.ncp != nch.ncp->nc_parent) {
+				cache_unlock(&nch);
+				continue;
+			}
+			cache_hold(&next);
+			cache_unlock(&nch);
+			break;
+		}
+		cache_drop(&nch);
+		nch.ncp = next.ncp;
+	}
+	if (nch.ncp) {
+		cache_drop(&nch);
+		return (nch.ncp == parent.ncp ? 1 : 0);
+	} else {
+		return 0;
+	}
+}
+
+
+/*
  * Do a generic nlookup.  Note that the passed nd is not nlookup_done()'d
  * on return, even if an error occurs.  If no error occurs or NLC_CREATE
  * is flagged and ENOENT is returned, then the returned nl_nch is always
@@ -421,6 +521,7 @@ islastelement(const char *ptr)
 	return (*ptr == 0);
 }
 
+
 int
 nlookup(struct nlookupdata *nd)
 {
@@ -437,6 +538,8 @@ nlookup(struct nlookupdata *nd)
     int len;
     int dflags;
     int hit = 1;
+    int depthcount = 0;
+    int dotdotinpath = 0;
 
 #ifdef KTRACE
     if (KTRPOINT(nd->nl_td, KTR_NAMEI))
@@ -485,6 +588,15 @@ nlookup(struct nlookupdata *nd)
 				   islastelement(ptr));
 	    cache_drop(&nd->nl_nch);
 	    nd->nl_nch = nch;		/* remains locked */
+
+	    /*
+	     * If the lookup is strictly relative for a capsicum sandbox,
+	     * don't allow absolute path
+	     */
+	    if (nd->nl_flags & NLC_STRICTLYRELATIVE) {
+		    error = ECAPMODE;
+		    break;
+	    }
 
 	    /*
 	     * Fast-track termination.  There is no parent directory of
@@ -554,11 +666,13 @@ nlookup(struct nlookupdata *nd)
 	    wasdotordotdot = 1;
 	} else if (nlc.nlc_namelen == 2 && 
 		   nlc.nlc_nameptr[0] == '.' && nlc.nlc_nameptr[1] == '.') {
+
 	    if (nd->nl_nch.mount == nd->nl_rootnch.mount &&
 		nd->nl_nch.ncp == nd->nl_rootnch.ncp
 	    ) {
 		/*
 		 * ".." at the root returns the root
+		 *  depthcount is not modified
 		 */
 		cache_unlock(&nd->nl_nch);
 		nd->nl_flags &= ~NLC_NCPISLOCKED;
@@ -583,8 +697,10 @@ nlookup(struct nlookupdata *nd)
 		nd->nl_flags &= ~NLC_NCPISLOCKED;
 		cache_get_maybe_shared(&nctmp, &nch, islastelement(ptr));
 		cache_drop(&nctmp);		/* NOTE: zero's nctmp */
+		depthcount--;
 	    }
 	    wasdotordotdot = 2;
+	    dotdotinpath = 1;
 	} else {
 	    /*
 	     * Must unlock nl_nch when traversing down the path.  However,
@@ -626,6 +742,7 @@ nlookup(struct nlookupdata *nd)
 	    if (hvp)
 		vdrop(hvp);
 	    wasdotordotdot = 0;
+	    depthcount++;
 	}
 
 	/*
@@ -875,6 +992,29 @@ double_break:
 		cache_put(&nch);
 		break;
 	    }
+	}
+
+
+	/*
+	 * If we encountered a .. during the lookup and a strict relative
+	 * lookup is needed, a race may have occurs with rename, and we must
+	 * check that we are still in sandbox.
+	 */
+	if (dotdotinpath && (nd->nl_flags & NLC_STRICTLYRELATIVE)) {
+		/*
+		 * Do not allow lookups which escape the sandbox, even if it's
+		 * due to a symlink. Fast path.
+		 */
+		if (depthcount < 0) {
+			error = ECAPMODE;
+			cache_put(&nch);
+			break;
+		}
+		if (! isstillinsandbox(nd->nl_rootnch, nd->nl_sandroot, nch)) {
+		    error = ECAPMODE;
+		    cache_put(&nch);
+		    break;
+		}
 	}
 
 	/*
