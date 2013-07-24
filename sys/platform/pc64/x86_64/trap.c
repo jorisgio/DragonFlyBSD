@@ -48,6 +48,7 @@
 
 #include "opt_ddb.h"
 #include "opt_ktrace.h"
+#include "opt_capsicum.h"
 
 #include <machine/frame.h>
 #include <sys/param.h>
@@ -55,6 +56,7 @@
 #include <sys/kernel.h>
 #include <sys/kerneldump.h>
 #include <sys/proc.h>
+#include <sys/capability.h>
 #include <sys/pioctl.h>
 #include <sys/types.h>
 #include <sys/signal2.h>
@@ -1165,8 +1167,17 @@ syscall2(struct trapframe *frame)
 
 	if (code >= p->p_sysent->sv_size)
 		callp = &p->p_sysent->sv_table[0];
-	else
+	else {
+#ifdef CAPABILITY_MODE
+		if (IN_CAPABILITY_MODE(p) &&
+		    !(&p->p_sysent->sv_table[code].sy_flags & SYF_CAPENABLED)) {
+			error = ECAPMODE;
+			goto bad;
+		}
+#endif /* !CAPABILITY_MODE */
+
 		callp = &p->p_sysent->sv_table[code];
+	}
 
 	narg = callp->sy_narg & SYF_ARGMASK;
 
