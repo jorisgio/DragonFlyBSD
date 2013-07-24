@@ -38,13 +38,20 @@ trap "rm $sysdcl $syscompat $syscompatdf12 $syscompatdcl $syscompatdcldf12 $syse
 touch $sysdcl $syscompat $syscompatdf12 $syscompatdcl $syscompatdcldf12 $sysent $sysinc $sysarg $sysun
 
 case $# in
-    0)	echo "Usage: $0 input-file <config-file>" 1>&2
+    0)	echo "Usage: $0 input-file <capabilities> <config-file>" 1>&2
 	exit 1
 	;;
 esac
 
+if [ -n "$3" -a -f "$3" ]; then
+	. $3
+fi
+
 if [ -n "$2" -a -f "$2" ]; then
-	. $2
+	capenabled=`grep -v "^#" "$2" | grep -v "^$"`
+	capenabled=`echo $capenabled |  sed 's/ /,/g'`
+else
+	capenabled=""
 fi
 
 sed -e '
@@ -83,7 +90,10 @@ s/\$//g
 		switchname = \"$switchname\"
 		namesname = \"$namesname\"
 		infile = \"$1\"
+		capenabled_string = \"$capenabled\"
 		"'
+
+		split(capenabled_string, capenabled, ",");
 
 		printf "/*\n * System call switch table.\n *\n" > syssw
 		printf " * DO NOT EDIT-- To regenerate this file, edit syscalls.master followed\n" > syssw
@@ -245,6 +255,13 @@ s/\$//g
 
 		funcname=$f
 		usefuncname=$f
+
+		for (cap in capenabled) {
+			if (funcname == capenabled[cap]) {
+				flags = "SYF_CAPENABLED"
+			}
+		}
+
 		if (funcalias == "")
 			funcalias = funcname
 		if (argalias == "") {
@@ -288,6 +305,9 @@ s/\$//g
 		}
 		if (argc != 0)
 			argssize = "AS(" argalias ")"
+	}
+	{
+		flags = "0";
 	}
 	{	comment = $4
 		if (NF < 7)
@@ -337,12 +357,14 @@ s/\$//g
 		printf("\t{ %s, (sy_call_t *)", argssize) > sysent
 		column = 8 + 2 + length(argssize) + 15
 	 	if ($2 != "NOIMPL") {
-			printf("sys_%s },", funcname) > sysent
-			column = column + length(funcname) + 7
+			printf("sys_%s ,", funcname) > sysent
+			column = column + length(funcname) + 6
 		} else {
-			printf("sys_%s },", "nosys") > sysent
-			column = column + length("nosys") + 7
+			printf("sys_%s ,", "nosys") > sysent
+			column = column + length("nosys") + 6
 		}
+		printf(" %s },", flags) > sysent
+		column = column + length(flags) + 4
 		align_sysent_comment(column)
 		printf("/* %d = %s */\n", syscall, funcalias) > sysent
 		printf("\t\"%s\",\t\t\t/* %d = %s */\n",
@@ -385,10 +407,12 @@ s/\$//g
 		}
 		printf("%s\tsys_o%s (struct %s *);\n",
 		    rettype, funcname, argalias) > syscompatdcl
-		printf("\t{ compat(%s,%s) },",
+		printf("\t{ compat(%s,%s) ,",
 		    argssize, funcname) > sysent
+		printf(" %s },", flags) > sysent
 		align_sysent_comment(8 + 9 + \
-		    length(argssize) + 1 + length(funcname) + 4)
+		    length(argssize) + 1 + length(funcname) + 3 + \
+		    length(flags) + 4)
 		printf("/* %d = old %s */\n", syscall, funcalias) > sysent
 		printf("\t\"old.%s\",\t\t/* %d = old %s */\n",
 		    funcalias, syscall, funcalias) > sysnames
@@ -427,10 +451,12 @@ s/\$//g
 		}
 		printf("%s\tsys_dfbsd12_%s (struct %s *);\n",
 		    rettype, funcname, argalias) > syscompatdcldf12
-		printf("\t{ compatdf12(%s,%s) },",
+		printf("\t{ compatdf12(%s,%s) ,",
 		    argssize, funcname) > sysent
+		printf(" %s },", flags) > sysent
 		align_sysent_comment(8 + 9 + \
-		    length(argssize) + 1 + length(funcname) + 4)
+		    length(argssize) + 1 + length(funcname) + 3 + 4 + \
+		    length(flags))
 		printf("/* %d = old %s */\n", syscall, funcalias) > sysent
 		printf("\t\"old.%s\",\t\t/* %d = old %s */\n",
 		    funcalias, syscall, funcalias) > sysnames
@@ -445,10 +471,12 @@ s/\$//g
 		ncompat++
 		parseline()
 		printf("%s\tsys_o%s();\n", rettype, funcname) > syscompatdcl
-		printf("\t{ compat(%s,%s) },",
+		printf("\t{ compat(%s,%s) ,",
 		    argssize, funcname) > sysent
+		printf(" %s },", flags) > sysent
 		align_sysent_comment(8 + 9 + \
-		    length(argssize) + 1 + length(funcname) + 4)
+		    length(argssize) + 1 + length(funcname) + 3 + \
+		    length(flags) + 4)
 		printf("/* %d = old %s */\n", syscall, funcalias) > sysent
 		printf("\t\"old.%s\",\t\t/* %d = old %s */\n",
 		    funcalias, syscall, funcalias) > sysnames
@@ -461,8 +489,9 @@ s/\$//g
 		next
 	}
 	$2 == "OBSOL" {
-		printf("\t{ 0, (sy_call_t *)sys_nosys },") > sysent
-		align_sysent_comment(37)
+		printf("\t{ 0, (sy_call_t *)sys_nosys ,") > sysent
+		printf(" %s },", flags) > sysent
+		align_sysent_comment(37 + 4 + length(flags))
 		printf("/* %d = obsolete %s */\n", syscall, comment) > sysent
 		printf("\t\"obs_%s\",\t\t\t/* %d = obsolete %s */\n",
 		    $4, syscall, comment) > sysnames
@@ -474,8 +503,8 @@ s/\$//g
 		next
 	}
 	$2 == "UNIMPL" {
-		printf("\t{ 0, (sy_call_t *)sys_nosys },\t\t\t/* %d = %s */\n",
-		    syscall, comment) > sysent
+		printf("\t{ 0, (sy_call_t *)sys_nosys, %s },\t\t\t/* %d = %s */\n",
+		    flags, syscall, comment) > sysent
 		printf("\t\"#%d\",\t\t\t/* %d = %s */\n",
 		    syscall, syscall, comment) > sysnames
 		if ($3 != "NOHIDE")

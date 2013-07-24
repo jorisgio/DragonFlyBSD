@@ -48,10 +48,13 @@ typedef	int	sy_call_t (void *);
 struct sysent {		/* system call table */
 	int	sy_narg;	/* number of arguments */
 	sy_call_t *sy_call;	/* start function */
-	sy_call_t *sy_abort;	/* abort function (only if start was async) */
+	u_int32_t sy_flags;	/* syscall flags */
 };
 
 #define SYF_ARGMASK	0x0000FFFF
+
+/* A system call is permitted in capability mode */
+#define SYF_CAPENABLED  0x00000001U
 
 #define SCARG(p,k)	((p)->k)	/* get arg from args pointer */
   /* placeholder till we integrate rest of lite2 syscallargs changes XXX */

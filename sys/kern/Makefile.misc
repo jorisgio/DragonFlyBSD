@@ -12,7 +12,8 @@ sysent:	${.CURDIR}/init_sysent.c
 ${.CURDIR}/init_sysent.c ${.CURDIR}/syscalls.c \
 ${.CURDIR}/../sys/syscall.h ${.CURDIR}/../sys/syscall-hide.h \
 ${.CURDIR}/../sys/syscall.mk ${.CURDIR}/../sys/sysproto.h \
-${.CURDIR}/../sys/sysunion.h: ${.CURDIR}/makesyscalls.sh ${.CURDIR}/syscalls.master
+${.CURDIR}/../sys/sysunion.h: ${.CURDIR}/makesyscalls.sh ${.CURDIR}/syscalls.master \
+${.CURDIR}/capabilities.conf
 	-mv -f ${.CURDIR}/init_sysent.c ${.CURDIR}/init_sysent.c.bak
 	-mv -f ${.CURDIR}/syscalls.c ${.CURDIR}/syscalls.c.bak
 	-mv -f ${.CURDIR}/../sys/syscall.h ${.CURDIR}/../sys/syscall.h.bak
@@ -20,7 +21,7 @@ ${.CURDIR}/../sys/sysunion.h: ${.CURDIR}/makesyscalls.sh ${.CURDIR}/syscalls.mas
 	-mv -f ${.CURDIR}/../sys/syscall.mk ${.CURDIR}/../sys/syscall.mk.bak
 	-mv -f ${.CURDIR}/../sys/sysproto.h ${.CURDIR}/../sys/sysproto.h.bak
 	-mv -f ${.CURDIR}/../sys/sysunion.h ${.CURDIR}/../sys/sysunion.h.bak
-	cd ${.CURDIR} && sh makesyscalls.sh syscalls.master
+	cd ${.CURDIR} && sh makesyscalls.sh syscalls.master capabilities.conf
 
 # Kernel tags:
 # Tags files are built in the top-level directory for each architecture,

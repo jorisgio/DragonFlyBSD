@@ -15,4 +15,4 @@ ${.CURDIR}/linux_proto.h ${.CURDIR}/linux_union.h: \
 	-mv -f ${.CURDIR}/linux_syscall.h ${.CURDIR}/linux_syscall.h.bak
 	-mv -f ${.CURDIR}/linux_proto.h ${.CURDIR}/linux_proto.h.bak
 	-mv -f ${.CURDIR}/linux_union.h ${.CURDIR}/linux_union.h.bak
-	cd ${.CURDIR} && sh ../../../kern/makesyscalls.sh syscalls.master syscalls.conf
+	cd ${.CURDIR} && sh ../../../kern/makesyscalls.sh syscalls.master capabilities.conf syscalls.conf
