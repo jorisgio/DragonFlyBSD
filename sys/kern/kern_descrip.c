@@ -557,9 +557,18 @@ kern_fcntl(int fd, int cmd, union fcntl_dat *dat, struct ucred *cred)
 	/*
 	 * Remaining operation need all CAP_FCNTL
 	 */
-	error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FCNTL, cmd);
-	if (error != 0) {
-		return (error);
+	switch(cmd) {
+	case F_GETFL:
+	case F_SETFL:
+	case F_GETOWN:
+	case F_SETOWN:
+		error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_FCNTL, cmd);
+		if (error != 0) {
+			return (error);
+		}
+		break;
+	default:
+		return (EINVAL);
 	}
 
 	switch (cmd) {
