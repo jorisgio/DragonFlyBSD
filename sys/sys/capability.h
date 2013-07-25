@@ -254,8 +254,8 @@ u_char	cap_rights_to_vmprot(cap_rights_t have);
  */
 cap_rights_t	cap_rights(struct filedesc *fdp, int fd);
 
-int	cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd);
-int	cap_fcntl_check(struct filedesc *fdp, int fd, int cmd);
+int cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd, const char *f);
+int cap_fcntl_check(struct filedesc *fdp, int fd, int cmd);
 
 #else /* !_KERNEL */
 
