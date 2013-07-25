@@ -48,6 +48,7 @@
 #include <sys/kernel.h>
 #include <sys/fcntl.h>
 #include <sys/file.h>
+#include <sys/capability.h>
 #include <sys/linker.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
@@ -1056,6 +1057,7 @@ sys_mountctl(struct mountctl_args *uap)
 
 	/*
 	 * Validate the descriptor
+	 * XXX : capsicum, need to find proper capabilities right
 	 */
 	if (uap->fd >= 0) {
 		fp = holdfp(p->p_fd, uap->fd, -1);
@@ -2551,9 +2553,9 @@ kern_lseek(int fd, off_t offset, int whence, off_t *res)
 	off_t new_offset;
 	int error;
 
-	fp = holdfp(p->p_fd, fd, -1);
-	if (fp == NULL)
-		return (EBADF);
+	holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_SEEK, 0);
+	if (error)
+		return (error);
 	if (fp->f_type != DTYPE_VNODE) {
 		error = ESPIPE;
 		goto done;
