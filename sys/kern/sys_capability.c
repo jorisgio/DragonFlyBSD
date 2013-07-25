@@ -273,11 +273,21 @@ sys_cap_rights_get(struct cap_rights_get_args *uap)
  * ENOTCAPABLE will be returned.
  */
 int
-cap_ioctl_check(struct ioctls_list *l, u_long cmd)
+cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd)
 {
 	u_long *cmds;
+	struct ioctl_list *l;
 	ssize_t ncmds;
 	ssize_t i;
+
+	spin_lock_shared(&fdp);
+
+	KASSERT(fd >= 0 && fd < fdp->fd_nfiles,
+		("%s: invalid fd=%d", __func__, fd));
+
+	l =  fdp->fd_files[fd].fcaps.fc_ioctls;
+	ioctlshold(l);
+	spin_unlock_shared(&fdp);
 
 	ncmds = l->io_nioctls;
 	cmds = l->io_ioctls;
@@ -287,10 +297,13 @@ cap_ioctl_check(struct ioctls_list *l, u_long cmd)
 	 * Or even sorting the list
 	 */
 	for (i = 0; i < ncmds ; i++) {
-		if (cmds[i] == cmd)
+		if (cmds[i] == cmd) {
+			ioctlsdrop(l);
 			return (0);
+		}
 	}
 
+	ioctlsdrop(l);
 	return (ENOTCAPABLE);
 }
 
