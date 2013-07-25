@@ -36,12 +36,14 @@
  */
 
 #include "opt_ktrace.h"
+#include "opt_capsicum.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/sysproto.h>
 #include <sys/event.h>
 #include <sys/filedesc.h>
+#include <sys/capability.h>
 #include <sys/filio.h>
 #include <sys/fcntl.h>
 #include <sys/file.h>
@@ -256,9 +258,9 @@ kern_preadv(int fd, struct uio *auio, int flags, size_t *res)
 
 	KKASSERT(p);
 
-	fp = holdfp(p->p_fd, fd, FREAD);
-	if (fp == NULL)
-		return (EBADF);
+	error = holdfp_capcheck(p->p_fd, fd, &fp, FREAD, CAP_PREAD, 0);
+	if (error)
+		return (error);
 	if (flags & O_FOFFSET && fp->f_type != DTYPE_VNODE) {
 		error = ESPIPE;
 	} else {
@@ -464,9 +466,9 @@ kern_pwritev(int fd, struct uio *auio, int flags, size_t *res)
 
 	KKASSERT(p);
 
-	fp = holdfp(p->p_fd, fd, FWRITE);
-	if (fp == NULL)
-		return (EBADF);
+	holdfp_capcheck(p->p_fd, fd, &fp, FWRITE, CAP_PWRITE, 0);
+	if (error)
+		return (error);
 	else if ((flags & O_FOFFSET) && fp->f_type != DTYPE_VNODE) {
 		error = ESPIPE;
 	} else {
@@ -584,10 +586,16 @@ mapped_ioctl(int fd, u_long com, caddr_t uspc_data, struct ioctl_map *map,
 
 	KKASSERT(p);
 	cred = td->td_ucred;
-
-	fp = holdfp(p->p_fd, fd, FREAD|FWRITE);
-	if (fp == NULL)
-		return(EBADF);
+	error = holdfp_capcheck(p->p_fd, fd, &fd, FREAD|FWRITE, CAP_IOCTL, 0);
+	if (error)
+		return(error);
+#ifdef CAPABILITIES
+	error = cap_ioctl_check(p->p_fd, fd, com, __func__);
+	if (error) {
+		fdrop(fp);
+		return(error);
+	}
+#endif /* !CAPABILITIES */
 
 	if (map != NULL) {	/* obey translation map */
 		u_long maskcmd;

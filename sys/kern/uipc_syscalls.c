@@ -1479,9 +1479,9 @@ sys_sendfile(struct sendfile_args *uap)
 	 * Do argument checking. Must be a regular file in, stream
 	 * type and connected socket out, positive offset.
 	 */
-	fp = holdfp(p->p_fd, uap->fd, FREAD);
-	if (fp == NULL) {
-		return (EBADF);
+	holdfp_capcheck(p->p_fd, uap->fd, &fp, FREAD, CAP_PREAD, 0);
+	if (error) {
+		return (error);
 	}
 	if (fp->f_type != DTYPE_VNODE) {
 		fdrop(fp);
