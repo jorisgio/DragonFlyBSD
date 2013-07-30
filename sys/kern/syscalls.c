@@ -542,4 +542,8 @@ const char *syscallnames[] = {
 	"linkat",			/* 531 = linkat */
 	"eaccess",			/* 532 = eaccess */
 	"lpathconf",			/* 533 = lpathconf */
+	"opencred",			/* 534 = opencred */
+	"setuidfromfd",			/* 535 = setuidfromfd */
+	"setgidfromfd",			/* 536 = setgidfromfd */
+	"setgroupsfromfd",			/* 537 = setgroupsfromfd */
 };

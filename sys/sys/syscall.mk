@@ -301,4 +301,8 @@ MIASM =  \
 	vquotactl.o \
 	linkat.o \
 	eaccess.o \
-	lpathconf.o
+	lpathconf.o \
+	opencred.o \
+	setuidfromfd.o \
+	setgidfromfd.o \
+	setgroupsfromfd.o

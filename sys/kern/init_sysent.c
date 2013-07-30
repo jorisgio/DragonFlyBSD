@@ -570,4 +570,8 @@ struct sysent sysent[] = {
 	{ AS(linkat_args), (sy_call_t *)sys_linkat },	/* 531 = linkat */
 	{ AS(eaccess_args), (sy_call_t *)sys_eaccess },	/* 532 = eaccess */
 	{ AS(lpathconf_args), (sy_call_t *)sys_lpathconf },	/* 533 = lpathconf */
+	{ AS(opencred_args), (sy_call_t *)sys_opencred },	/* 534 = opencred */
+	{ AS(setuidfromfd_args), (sy_call_t *)sys_setuidfromfd },	/* 535 = setuidfromfd */
+	{ AS(setgidfromfd_args), (sy_call_t *)sys_setgidfromfd },	/* 536 = setgidfromfd */
+	{ AS(setgroupsfromfd_args), (sy_call_t *)sys_setgroupsfromfd },	/* 537 = setgroupsfromfd */
 };

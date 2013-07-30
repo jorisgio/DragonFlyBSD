@@ -409,4 +409,8 @@ union sysunion {
 	struct	linkat_args linkat;
 	struct	eaccess_args eaccess;
 	struct	lpathconf_args lpathconf;
+	struct	opencred_args opencred;
+	struct	setuidfromfd_args setuidfromfd;
+	struct	setgidfromfd_args setgidfromfd;
+	struct	setgroupsfromfd_args setgroupsfromfd;
 };

@@ -374,4 +374,8 @@
 #define	SYS_linkat	531
 #define	SYS_eaccess	532
 #define	SYS_lpathconf	533
-#define	SYS_MAXSYSCALL	534
+#define	SYS_opencred	534
+#define	SYS_setuidfromfd	535
+#define	SYS_setgidfromfd	536
+#define	SYS_setgroupsfromfd	537
+#define	SYS_MAXSYSCALL	538

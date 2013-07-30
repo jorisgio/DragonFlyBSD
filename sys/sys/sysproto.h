@@ -2289,6 +2289,30 @@ struct	lpathconf_args {
 	char *	path;	char path_[PAD_(char *)];
 	int	name;	char name_[PAD_(int)];
 };
+struct	opencred_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	flags;	char flags_[PAD_(int)];
+};
+struct	setuidfromfd_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+};
+struct	setgidfromfd_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+};
+struct	setgroupsfromfd_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	fd;	char fd_[PAD_(int)];
+};
 
 #ifdef COMPAT_43
 
@@ -2897,6 +2921,10 @@ int	sys_vquotactl (struct vquotactl_args *);
 int	sys_linkat (struct linkat_args *);
 int	sys_eaccess (struct eaccess_args *);
 int	sys_lpathconf (struct lpathconf_args *);
+int	sys_opencred (struct opencred_args *);
+int	sys_setuidfromfd (struct setuidfromfd_args *);
+int	sys_setgidfromfd (struct setgidfromfd_args *);
+int	sys_setgroupsfromfd (struct setgroupsfromfd_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_

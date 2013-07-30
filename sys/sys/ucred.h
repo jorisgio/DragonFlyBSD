@@ -68,10 +68,14 @@ struct ucred {
 	uid_t   cr_svuid;		/* Saved effective user id. */
 	gid_t   cr_rgid;		/* Real group id. */
 	gid_t   cr_svgid;		/* Saved effective group id. */
+	u_int	cr_flags;		/* Credential flags. */
 };
 #define cr_gid cr_groups[0]
 #define NOCRED ((struct ucred *)0)	/* no credential available */
 #define FSCRED ((struct ucred *)-1)	/* filesystem credential */
+
+#define	CRED_FLAG_READ		0x00000001U
+#define	CRED_FLAG_WRIITE	0x00000002U
 
 /*
  * This is the external representation of struct ucred, based upon the
@@ -88,6 +92,17 @@ struct xucred {
 #define	XUCRED_VERSION	0
 
 #ifdef _KERNEL
+/*
+ * Use the clause in B.4.2.2 that allows setuid/setgid to be 4.2/4.3BSD
+ * compatible.  It says that setting the uid/gid to euid/egid is a special
+ * case of "appropriate privilege".  Once the rules are expanded out, this
+ * basically means that setuid(nnn) sets all three id's, in all permitted
+ * cases unless _POSIX_SAVED_IDS is enabled.  In that case, setuid(getuid())
+ * does not set the saved id - this is dangerous for traditional BSD
+ * programs.  For this reason, we *really* do not want to set
+ * _POSIX_SAVED_IDS and do not want to clear POSIX_APPENDIX_B_4_2_2.
+ */
+#define POSIX_APPENDIX_B_4_2_2
 
 struct proc;
 
