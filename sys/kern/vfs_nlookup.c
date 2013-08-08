@@ -160,7 +160,7 @@ nlookup_init(struct nlookupdata *nd,
  */
 int
 nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd, 
-		const char *path, enum uio_seg seg, int flags)
+		const char *path, enum uio_seg seg, int flags, cap_rights_t rights)
 {
 	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
@@ -176,7 +176,8 @@ nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd,
 
 
 	if (nd->nl_path[0] != '/' && fd != AT_FDCWD) {
-		if ((error = holdvnode(p->p_fd, fd, CAP_LOOKUP, &fp)) != 0)
+		error = holdvnode(p->p_fd, fd, CAP_LOOKUP | rights, &fp);
+		if (error)
 			goto done;
 		vp = (struct vnode*)fp->f_data;
 		if (vp->v_type != VDIR || fp->f_nchandle.ncp == NULL) {
