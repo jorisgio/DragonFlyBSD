@@ -133,7 +133,8 @@ linux_open_common(int dfd, char *lpath, int lflags, int mode, int *iresult)
 	if (lflags & LINUX_O_NOCTTY)
 		flags |= O_NOCTTY;
 
-	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, NLC_FOLLOW);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, NLC_FOLLOW, 0);
 	if (error == 0) {
 		error = kern_open(&nd, flags, mode, iresult);
 	}
@@ -630,7 +631,8 @@ sys_linux_unlinkat(struct linux_unlinkat_args *args)
 
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
 	get_mplock();
-	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0, 0);
 	if (error == 0) {
 		if (args->flag & LINUX_AT_REMOVEDIR)
 			error = kern_rmdir(&nd);
@@ -743,7 +745,8 @@ sys_linux_mkdirat(struct linux_mkdirat_args *args)
 #endif
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
 	get_mplock();
-	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0, 0);
 	if (error == 0)
 		error = kern_mkdir(&nd, args->mode);
 	nlookup_done_at(&nd, fp);
@@ -842,9 +845,11 @@ sys_linux_renameat(struct linux_renameat_args *args)
 	olddfd = (args->olddfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->olddfd;
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	get_mplock();
-	error = nlookup_init_at(&fromnd, &fp, olddfd, from, UIO_SYSSPACE, 0);
+	/* XXX capsicum */
+	error = nlookup_init_at(&fromnd, &fp, olddfd, from, UIO_SYSSPACE, 0, 0);
 	if (error == 0) {
-		error = nlookup_init_at(&tond, &fp2, newdfd, to, UIO_SYSSPACE, 0);
+		/* XXX capsicum */
+		error = nlookup_init_at(&tond, &fp2, newdfd, to, UIO_SYSSPACE, 0, 0);
 		if (error == 0)
 			error = kern_rename(&fromnd, &tond);
 		nlookup_done_at(&tond, fp2);
@@ -917,7 +922,8 @@ sys_linux_symlinkat(struct linux_symlinkat_args *args)
 #endif
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	get_mplock();
-	error = nlookup_init_at(&nd, &fp, newdfd, link, UIO_SYSSPACE, 0);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, newdfd, link, UIO_SYSSPACE, 0, 0);
 	if (error == 0) {
 		mode = ACCESSPERMS & ~td->td_proc->p_fd->fd_cmask;
 		error = kern_symlink(&nd, path, mode);
@@ -977,7 +983,8 @@ sys_linux_readlinkat(struct linux_readlinkat_args *args)
 #endif
 	dfd = (args->dfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->dfd;
 	get_mplock();
-	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, dfd, path, UIO_SYSSPACE, 0, 0);
 	if (error == 0) {
 		error = kern_readlink(&nd, args->buf, args->count,
 				      &args->sysmsg_iresult);
@@ -1147,9 +1154,11 @@ sys_linux_linkat(struct linux_linkat_args *args)
 	olddfd = (args->olddfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->olddfd;
 	newdfd = (args->newdfd == LINUX_AT_FDCWD) ? AT_FDCWD : args->newdfd;
 	get_mplock();
-	error = nlookup_init_at(&nd, &fp, olddfd, path, UIO_SYSSPACE, NLC_FOLLOW);
+	/* XXX capsicum */
+	error = nlookup_init_at(&nd, &fp, olddfd, path, UIO_SYSSPACE, NLC_FOLLOW, 0);
 	if (error == 0) {
-		error = nlookup_init_at(&linknd, &fp2, newdfd, link, UIO_SYSSPACE, 0);
+		/* XXX capsicum */
+		error = nlookup_init_at(&linknd, &fp2, newdfd, link, UIO_SYSSPACE, 0, 0);
 		if (error == 0)
 			error = kern_link(&nd, &linknd);
 		nlookup_done_at(&linknd, fp2);

@@ -149,7 +149,7 @@ struct nlookupdata {
 
 int nlookup_init(struct nlookupdata *, const char *, enum uio_seg, int);
 int nlookup_init_at(struct nlookupdata *, struct file **, int, const char *, 
-		enum uio_seg, int);
+		enum uio_seg, int, cap_rights_t);
 int nlookup_init_raw(struct nlookupdata *, const char *, enum uio_seg, int, struct ucred *, struct nchandle *);
 int nlookup_init_root(struct nlookupdata *, const char *, enum uio_seg, int, struct ucred *, struct nchandle *, struct nchandle *);
 void nlookup_set_cred(struct nlookupdata *nd, struct ucred *cred);

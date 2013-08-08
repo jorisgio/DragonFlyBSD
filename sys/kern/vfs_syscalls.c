@@ -35,6 +35,8 @@
  * $FreeBSD: src/sys/kern/vfs_syscalls.c,v 1.151.2.18 2003/04/04 20:35:58 tegge Exp $
  */
 
+#include "opt_capsicum.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/buf.h>
@@ -93,6 +95,7 @@ static int setfmode (struct vnode *, int);
 static int setfflags (struct vnode *, int);
 static int setutimes (struct vnode *, struct vattr *,
 			const struct timespec *, int);
+static cap_rights_t flags_to_rights(int flags);
 static int	usermount = 0;	/* if 1, non-root can mount fs. */
 
 int (*union_dircheckp) (struct thread *, struct vnode **, struct file *);
@@ -2021,8 +2024,15 @@ sys_openat(struct openat_args *uap)
 	struct nlookupdata nd;
 	int error;
 	struct file *fp;
+	cap_rights_t rights;
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+#ifdef CAPABILITIES
+	rights = flags_to_rights(uap->flags);
+#endif /* !CAPABILITIES */
+
+
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path,
+				UIO_USERSPACE, 0, rights);
 	if (error == 0) {
 		error = kern_open(&nd, uap->flags, uap->mode, 
 					&uap->sysmsg_result);
@@ -2132,7 +2142,8 @@ sys_mknodat(struct mknodat_args *uap)
 	struct file *fp;
 	int error;
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path,
+				UIO_USERSPACE, 0, CAP_MKNODAT);
 	if (error == 0) {
 		error = kern_mknod(&nd, uap->mode,
 				   umajor(uap->dev), uminor(uap->dev));
@@ -2201,7 +2212,8 @@ sys_mkfifoat(struct mkfifoat_args *uap)
 	struct file *fp;
 	int error;
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path,
+				UIO_USERSPACE, 0, CAP_MKFIFOAT);
 	if (error == 0)
 		error = kern_mkfifo(&nd, uap->mode);
 	nlookup_done_at(&nd, fp);
@@ -2360,10 +2372,10 @@ sys_linkat(struct linkat_args *uap)
 	int error;
 
 	error = nlookup_init_at(&nd, &fp1, uap->fd1, uap->path1, UIO_USERSPACE,
-	    (uap->flags & AT_SYMLINK_FOLLOW) ? NLC_FOLLOW : 0);
+	    (uap->flags & AT_SYMLINK_FOLLOW) ? NLC_FOLLOW : 0, 0);
 	if (error == 0) {
 		error = nlookup_init_at(&linknd, &fp2, uap->fd2,
-		    uap->path2, UIO_USERSPACE, 0);
+		    uap->path2, UIO_USERSPACE, 0, CAP_LINKAT);
 		if (error == 0)
 			error = kern_link(&nd, &linknd);
 		nlookup_done_at(&linknd, fp2);
@@ -2445,7 +2457,7 @@ sys_symlinkat(struct symlinkat_args *uap)
 	error = copyinstr(uap->path1, path1, MAXPATHLEN, NULL);
 	if (error == 0) {
 		error = nlookup_init_at(&nd, &fp, uap->fd, uap->path2,
-		    UIO_USERSPACE, 0);
+		    UIO_USERSPACE, 0, CAP_SYMLINKAT);
 		if (error == 0) {
 			mode = ACCESSPERMS & ~td->td_proc->p_fd->fd_cmask;
 			error = kern_symlink(&nd, path1, mode);
@@ -2531,7 +2543,7 @@ sys_unlinkat(struct unlinkat_args *uap)
 	if (uap->flags & ~AT_REMOVEDIR)
 		return (EINVAL);
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0, CAP_UNLINKAT);
 	if (error == 0) {
 		if (uap->flags & AT_REMOVEDIR)
 			error = kern_rmdir(&nd);
@@ -2553,7 +2565,7 @@ kern_lseek(int fd, off_t offset, int whence, off_t *res)
 	off_t new_offset;
 	int error;
 
-	holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_SEEK, 0);
+	error = holdfp_capcheck(p->p_fd, fd, &fp, -1, CAP_SEEK, 0);
 	if (error)
 		return (error);
 	if (fp->f_type != DTYPE_VNODE) {
@@ -2727,7 +2739,7 @@ sys_faccessat(struct faccessat_args *uap)
 	int error;
 
 	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 
-				NLC_FOLLOW);
+				NLC_FOLLOW, CAP_FSTAT);
 	if (error == 0)
 		error = kern_access(&nd, uap->amode, uap->flags);
 	nlookup_done_at(&nd, fp);
@@ -2831,7 +2843,7 @@ sys_fstatat(struct fstatat_args *uap)
 	flags = (uap->flags & AT_SYMLINK_NOFOLLOW) ? 0 : NLC_FOLLOW;
 
 	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, 
-				UIO_USERSPACE, flags);
+				UIO_USERSPACE, flags, CAP_FSTAT);
 	if (error == 0) {
 		error = kern_stat(&nd, &st);
 		if (error == 0)
@@ -2956,7 +2968,7 @@ sys_readlinkat(struct readlinkat_args *uap)
 	struct file *fp;
 	int error;
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0, 0);
 	if (error == 0) {
 		error = kern_readlink(&nd, uap->buf, uap->bufsize,
 					&uap->sysmsg_result);
@@ -2994,6 +3006,47 @@ setfflags(struct vnode *vp, int flags)
 	}
 	return (error);
 }
+
+#ifdef CAPABILITIES
+/*
+ * Convert fflags to capability rights
+ */
+static cap_rights_t
+flags_to_rights(int flags)
+{
+	cap_rights_t rights = 0;
+
+	switch ((flags & O_ACCMODE)) {
+	case O_RDONLY:
+		rights |= CAP_READ;
+		break;
+	case O_RDWR:
+		rights |= CAP_READ;
+		/* FALLTHROUGH
+		 * */
+	case O_WRONLY:
+		rights |= CAP_WRITE;
+		if (!(flags & (O_APPEND | O_TRUNC)))
+			rights |= CAP_SEEK;
+		break;
+	}
+
+	if (flags & O_CREAT)
+		rights |= CAP_CREATE;
+
+	if (flags & O_TRUNC)
+		rights |= CAP_FTRUNCATE;
+
+	if (flags & (O_SYNC | O_FSYNC))
+		rights |= CAP_FSYNC;
+
+	if (flags & (O_EXLOCK | O_SHLOCK))
+		rights |= CAP_FLOCK;
+
+	return (rights);
+}
+
+#endif /* CAPABILITIES */
 
 /*
  * chflags(char *path, int flags)
@@ -3187,7 +3240,7 @@ sys_fchmodat(struct fchmodat_args *uap)
 	flags = (uap->flags & AT_SYMLINK_NOFOLLOW) ? 0 : NLC_FOLLOW;
 
 	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, 
-				UIO_USERSPACE, flags);
+				UIO_USERSPACE, flags, CAP_FCHMODAT);
 	if (error == 0)
 		error = kern_chmod(&nd, uap->mode);
 	nlookup_done_at(&nd, fp);
@@ -3328,7 +3381,7 @@ sys_fchownat(struct fchownat_args *uap)
 	flags = (uap->flags & AT_SYMLINK_NOFOLLOW) ? 0 : NLC_FOLLOW;
 
 	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, 
-				UIO_USERSPACE, flags);
+				UIO_USERSPACE, flags, CAP_FCHOWNAT);
 	if (error == 0)
 		error = kern_chown(&nd, uap->uid, uap->gid);
 	nlookup_done_at(&nd, fp);
@@ -3921,11 +3974,11 @@ sys_renameat(struct renameat_args *uap)
 	do {
 		error = nlookup_init_at(&oldnd, &oldfp,
 					uap->oldfd, uap->old,
-					UIO_USERSPACE, 0);
+					UIO_USERSPACE, 0, CAP_RENAMEAT);
 		if (error == 0) {
 			error = nlookup_init_at(&newnd, &newfp,
 						uap->newfd, uap->new,
-						UIO_USERSPACE, 0);
+						UIO_USERSPACE, 0, CAP_LINKAT);
 			if (error == 0)
 				error = kern_rename(&oldnd, &newnd);
 			nlookup_done_at(&newnd, newfp);
@@ -3995,7 +4048,8 @@ sys_mkdirat(struct mkdirat_args *uap)
 	struct file *fp;
 	int error;
 
-	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path, UIO_USERSPACE, 0);
+	error = nlookup_init_at(&nd, &fp, uap->fd, uap->path,
+				UIO_USERSPACE, 0, CAP_MKDIRAT);
 	if (error == 0)
 		error = kern_mkdir(&nd, uap->mode);
 	nlookup_done_at(&nd, fp);
