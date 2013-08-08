@@ -87,8 +87,8 @@ static struct spinlock unp_ino_spin = SPINLOCK_INITIALIZER(&unp_ino_spin);
 
 static int     unp_attach (struct socket *, struct pru_attach_info *);
 static void    unp_detach (struct unpcb *);
-static int     unp_bind (struct unpcb *,struct sockaddr *, struct thread *);
-static int     unp_connect (struct socket *,struct sockaddr *,
+static int     unp_bind (int ctx, struct unpcb *,struct sockaddr *, struct thread *);
+static int     unp_connect (int ctx, struct socket *,struct sockaddr *,
 				struct thread *);
 static void    unp_disconnect (struct unpcb *);
 static void    unp_shutdown (struct unpcb *);
@@ -217,7 +217,24 @@ uipc_bind(netmsg_t msg)
 	lwkt_gettoken(&unp_token);
 	unp = msg->base.nm_so->so_pcb;
 	if (unp)
-		error = unp_bind(unp, msg->bind.nm_nam, msg->bind.nm_td);
+		error = unp_bind(AT_FDCWD, unp, msg->bind.nm_nam, msg->bind.nm_td);
+	else
+		error = EINVAL;
+	lwkt_reltoken(&unp_token);
+	lwkt_replymsg(&msg->lmsg, error);
+}
+
+static void
+uipc_bindat(netmsg_t msg)
+{
+	struct unpcb *unp;
+	int error;
+
+	lwkt_gettoken(&unp_token);
+	unp = msg->base.nm_so->so_pcb;
+	if (unp)
+		error = unp_bind(msg->bindat.nm_fd, unp,
+					msg->bindat.nm_nam, msg->bindat.nm_td);
 	else
 		error = EINVAL;
 	lwkt_reltoken(&unp_token);
@@ -232,9 +249,28 @@ uipc_connect(netmsg_t msg)
 
 	unp = msg->base.nm_so->so_pcb;
 	if (unp) {
-		error = unp_connect(msg->base.nm_so,
+		error = unp_connect(AT_FDCWD,
+				    msg->base.nm_so,
 				    msg->connect.nm_nam,
 				    msg->connect.nm_td);
+	} else {
+		error = EINVAL;
+	}
+	lwkt_replymsg(&msg->lmsg, error);
+}
+
+static void
+uipc_connectat(netmsg_t msg)
+{
+	struct unpcb *unp;
+	int error;
+
+	unp = msg->base.nm_so->so_pcb;
+	if (unp) {
+		error = unp_connect(msg->connectat.nm_fd,
+				    msg->base.nm_so,
+				    msg->connectat.nm_nam,
+				    msg->connectat.nm_td);
 	} else {
 		error = EINVAL;
 	}
@@ -464,7 +500,7 @@ uipc_send(netmsg_t msg)
 				error = EISCONN;
 				break;
 			}
-			error = unp_connect(so,
+			error = unp_connect(AT_FDCWD, so,
 					    msg->send.nm_addr,
 					    msg->send.nm_td);
 			if (error)
@@ -509,7 +545,7 @@ uipc_send(netmsg_t msg)
 		 */
 		if (!(so->so_state & SS_ISCONNECTED)) {
 			if (msg->send.nm_addr) {
-				error = unp_connect(so,
+				error = unp_connect(AT_FDCWD, so,
 						    msg->send.nm_addr,
 						    msg->send.nm_td);
 				if (error)
@@ -706,7 +742,9 @@ struct pr_usrreqs uipc_usrreqs = {
 	.pru_accept = uipc_accept,
 	.pru_attach = uipc_attach,
 	.pru_bind = uipc_bind,
+	.pru_bindat = uipc_bindat,
 	.pru_connect = uipc_connect,
+	.pru_connectat = uipc_connectat,
 	.pru_connect2 = uipc_connect2,
 	.pru_control = pr_generic_notsupp,
 	.pru_detach = uipc_detach,
@@ -904,12 +942,13 @@ unp_detach(struct unpcb *unp)
 }
 
 static int
-unp_bind(struct unpcb *unp, struct sockaddr *nam, struct thread *td)
+unp_bind(int ctx, struct unpcb *unp, struct sockaddr *nam, struct thread *td)
 {
 	struct proc *p = td->td_proc;
 	struct sockaddr_un *soun = (struct sockaddr_un *)nam;
 	struct vnode *vp;
 	struct vattr vattr;
+	struct file *fp;
 	int error, namelen;
 	struct nlookupdata nd;
 	char buf[SOCK_MAXADDRLEN];
@@ -926,7 +965,7 @@ unp_bind(struct unpcb *unp, struct sockaddr *nam, struct thread *td)
 	}
 	strncpy(buf, soun->sun_path, namelen);
 	buf[namelen] = 0;	/* null-terminate the string */
-	error = nlookup_init(&nd, buf, UIO_SYSSPACE,
+	error = nlookup_init_at(&nd, &fp, ctx, buf, UIO_SYSSPACE,
 			     NLC_LOCKVP | NLC_CREATE | NLC_REFDVP);
 	if (error == 0)
 		error = nlookup(&nd);
@@ -951,20 +990,21 @@ unp_bind(struct unpcb *unp, struct sockaddr *nam, struct thread *td)
 		}
 	}
 done:
-	nlookup_done(&nd);
+	nlookup_done_at(&nd, fp);
 failed:
 	lwkt_reltoken(&unp_token);
 	return (error);
 }
 
 static int
-unp_connect(struct socket *so, struct sockaddr *nam, struct thread *td)
+unp_connect(int ctx, struct socket *so, struct sockaddr *nam, struct thread *td)
 {
 	struct proc *p = td->td_proc;
 	struct sockaddr_un *soun = (struct sockaddr_un *)nam;
 	struct vnode *vp;
 	struct socket *so2, *so3;
 	struct unpcb *unp, *unp2, *unp3;
+	struct file *fp;
 	int error, len;
 	struct nlookupdata nd;
 	char buf[SOCK_MAXADDRLEN];
@@ -980,12 +1020,12 @@ unp_connect(struct socket *so, struct sockaddr *nam, struct thread *td)
 	buf[len] = 0;
 
 	vp = NULL;
-	error = nlookup_init(&nd, buf, UIO_SYSSPACE, NLC_FOLLOW);
+	error = nlookup_init_at(&nd, &fp, ctx, buf, UIO_SYSSPACE, NLC_FOLLOW);
 	if (error == 0)
 		error = nlookup(&nd);
 	if (error == 0)
 		error = cache_vget(&nd.nl_nch, nd.nl_cred, LK_EXCLUSIVE, &vp);
-	nlookup_done(&nd);
+	nlookup_done_at(&nd, fp);
 	if (error)
 		goto failed;
 
