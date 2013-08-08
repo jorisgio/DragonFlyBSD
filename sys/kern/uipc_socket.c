@@ -290,6 +290,15 @@ sobind(struct socket *so, struct sockaddr *nam, struct thread *td)
 	return (error);
 }
 
+int
+sobindat(int ctx, struct socket *so, struct sockaddr *nam, struct thread *td)
+{
+	int error;
+
+	error = so_pru_bindat(ctx, so, nam, td);
+	return (error);
+}
+
 static void
 sodealloc(struct socket *so)
 {
@@ -737,6 +746,34 @@ soconnect(struct socket *so, struct sockaddr *nam, struct thread *td,
 			error = so_pru_connect_async(so, nam, td);
 		else
 			error = so_pru_connect(so, nam, td);
+	}
+	return (error);
+}
+
+int
+soconnectat(int ctx, struct socket *so, struct sockaddr *nam, struct thread *td)
+{
+	int error;
+
+	if (so->so_options & SO_ACCEPTCONN)
+		return (EOPNOTSUPP);
+	/*
+	 * If protocol is connection-based, can only connect once.
+	 * Otherwise, if connected, try to disconnect first.
+	 * This allows user to disconnect by connecting to, e.g.,
+	 * a null address.
+	 */
+	if (so->so_state & (SS_ISCONNECTED|SS_ISCONNECTING) &&
+	    ((so->so_proto->pr_flags & PR_CONNREQUIRED) ||
+	    (error = sodisconnect(so)))) {
+		error = EISCONN;
+	} else {
+		/*
+		 * Prevent accumulated error from previous connection
+		 * from biting us.
+		 */
+		so->so_error = 0;
+		error = so_pru_connectat(ctx, so, nam, td);
 	}
 	return (error);
 }

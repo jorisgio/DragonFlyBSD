@@ -165,6 +165,43 @@ so_pru_bind(struct socket *so, struct sockaddr *nam, struct thread *td)
 	return (error);
 }
 
+/*
+ * NOTE: If the target port changes the bind operation will deal with it.
+ */
+int
+so_pru_bindat(int fd, struct socket *so, struct sockaddr *nam, struct thread *td)
+{
+	struct netmsg_pru_bindat msg;
+	int error;
+
+	netmsg_init(&msg.base, so, &curthread->td_msgport,
+		    0, so->so_proto->pr_usrreqs->pru_bindat);
+	msg.nm_nam = nam;
+	msg.nm_td = td;		/* used only for prison_ip() */
+	msg.nm_fd = fd;
+	error = lwkt_domsg(so->so_port, &msg.base.lmsg, 0);
+	return (error);
+}
+
+int
+so_pru_connectat(int fd, struct socket *so, struct sockaddr *nam, struct thread *td)
+{
+	struct netmsg_pru_connectat msg;
+	int error;
+
+	netmsg_init(&msg.base, so, &curthread->td_msgport,
+		    0, so->so_proto->pr_usrreqs->pru_connectat);
+	msg.nm_nam = nam;
+	msg.nm_td = td;
+	msg.nm_m = NULL;
+	msg.nm_flags = 0;
+	msg.nm_reconnect = 0;
+	msg.nm_fd = fd;
+	error = lwkt_domsg(so->so_port, &msg.base.lmsg, 0);
+	return (error);
+}
+
+
 int
 so_pru_connect(struct socket *so, struct sockaddr *nam, struct thread *td)
 {

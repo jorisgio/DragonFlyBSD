@@ -111,8 +111,6 @@ static void fsetfd_locked(struct filedesc *fdp, struct file *fp, int fd, struct 
 static void fdreserve_locked (struct filedesc *fdp, int fd0, int incr);
 static struct file *funsetfd_locked (struct filedesc *fdp, int fd, struct ioctls_list **tofree);
 static void ffree(struct file *fp);
-int holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag,
-	cap_rights_t needrights, int needfcntl);
 
 static MALLOC_DEFINE(M_FILEDESC, "file desc", "Open file descriptor table");
 static MALLOC_DEFINE(M_FILEDESC_TO_LEADER, "file desc to leader",

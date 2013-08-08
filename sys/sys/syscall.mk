@@ -308,4 +308,6 @@ MIASM =  \
 	cap_ioctls_limit.o \
 	cap_ioctls_get.o \
 	cap_fcntls_limit.o \
-	cap_fcntls_get.o
+	cap_fcntls_get.o \
+	connectat.o \
+	bindat.o

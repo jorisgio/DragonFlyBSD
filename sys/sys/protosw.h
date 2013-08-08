@@ -191,6 +191,8 @@ struct protosw {
 #define	PRU_PRED		24
 #define PRU_CTLOUTPUT		25	/* get/set opts */
 #define PRU_NREQ		26
+#define PRU_CONNECTAT		27	/* connect at context */
+#define PRU_BINDAT		28	/* bind at context */
 
 #ifdef PRUREQUESTS
 const char *prurequests[] = {
@@ -200,7 +202,8 @@ const char *prurequests[] = {
 	"SENSE",	"RCVOOB",	"SENDOOB",	"SOCKADDR",
 	"PEERADDR",	"CONNECT2",	"",
 	"FASTTIMO",	"SLOWTIMO",	"PROTORCV",	"PROTOSEND",
-	"SEND_EOF",	"PREDICATE"
+	"SEND_EOF",	"PREDICATE",	"CTLOUTPUT",	"NREQ",
+	"CONNECTAT", 	"BINDAT"
 };
 #endif
 
@@ -239,7 +242,9 @@ struct pr_usrreqs {
 	void	(*pru_accept) (netmsg_t msg);
 	void	(*pru_attach) (netmsg_t msg);
 	void	(*pru_bind) (netmsg_t msg);
+	void	(*pru_bindat) (netmsg_t msg);
 	void	(*pru_connect) (netmsg_t msg);
+	void	(*pru_connectat) (netmsg_t msg);
 	void	(*pru_connect2) (netmsg_t msg);
 	void	(*pru_control) (netmsg_t msg);
 	void	(*pru_detach) (netmsg_t msg);

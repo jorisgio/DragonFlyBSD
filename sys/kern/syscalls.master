@@ -763,3 +763,7 @@
 				uint32_t fcntlrights); }
 541	STD	BSD	{ int cap_fcntls_get(int fd, \
 				uint32_t *fcntlrightsp); }
+542	STD	BSD	{ int connectat(int ctx, int s, caddr_t name, \
+				int namelen); }
+543	STD	BSD	{ int bindat(int ctx, int s, caddr_t name, \
+				int namelen); }

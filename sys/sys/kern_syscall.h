@@ -113,7 +113,8 @@ int kern_getrlimit(u_int which, struct rlimit *limp);
  */
 int kern_accept(int s, int fflags, struct sockaddr **name, int *namelen, int *res);
 int kern_bind(int s, struct sockaddr *sa);
-int kern_connect(int s, int fflags, struct sockaddr *sa);
+int kern_bindat(int ctx, int s, struct sockaddr *sa);
+int kern_connect(int ctx, int s, int fflags, struct sockaddr *sa);
 int kern_listen(int s, int backlog);
 int kern_getpeername(int s, struct sockaddr **name, int *namelen);
 int kern_getsockopt(int s, struct sockopt *sopt);

@@ -132,6 +132,13 @@ struct netmsg_pru_bind {
 	struct thread		*nm_td;
 };
 
+struct netmsg_pru_bindat {
+	struct netmsg_base	base;
+	struct sockaddr		*nm_nam;
+	struct thread		*nm_td;
+	int			nm_fd;
+};
+
 struct netmsg_pru_connect {
 	struct netmsg_base	base;
 	struct sockaddr		*nm_nam;
@@ -147,6 +154,16 @@ struct netmsg_pru_connect {
 #define PRUC_FALLBACK		0x0008		/* fallback to ipv4 */
 #define PRUC_ASYNC		0x0010
 #define PRUC_HELDTD		0x0020
+
+struct netmsg_pru_connectat {
+	struct netmsg_base	base;
+	struct sockaddr		*nm_nam;
+	struct thread		*nm_td;
+	struct mbuf		*nm_m;		/* connect with send */
+	int			nm_flags;	/* connect with send */
+	int			nm_reconnect;	/* message control */
+	int			nm_fd;				/* context */
+};
 
 struct netmsg_pru_connect2 {
 	struct netmsg_base	base;

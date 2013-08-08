@@ -102,7 +102,9 @@ net_init_domain(struct domain *dp)
 		PR_NOTSUPP(pr, ctloutput);
 		PRU_NOTSUPP(pu, accept);
 		PRU_NOTSUPP(pu, bind);
+		PRU_NOTSUPP(pu, bindat);
 		PRU_NOTSUPP(pu, connect);
+		PRU_NOTSUPP(pu, connectat);
 		PRU_NOTSUPP(pu, connect2);
 		PRU_NOTSUPP(pu, control);
 		PRU_NOTSUPP(pu, disconnect);
