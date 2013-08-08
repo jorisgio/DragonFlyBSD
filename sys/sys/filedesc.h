@@ -184,6 +184,8 @@ int	closef (struct file *fp, struct proc *p);
 void	fdcloseexec (struct proc *p);
 int	fdcheckstd (struct lwp *lp);
 struct	file *holdfp (struct filedesc *fdp, int fd, int flag);
+int holdfp_capcheck(struct filedesc *fdp, int fd, struct file **fpp, int flag,
+	cap_rights_t needrights, int needfcntl);
 int	holdsock (struct filedesc *fdp, int fdes, cap_rights_t needrights, struct file **fpp);
 int	holdvnode (struct filedesc *fdp, int fd, cap_rights_t needrights, struct file **fpp);
 int	fdissequential (struct file *);

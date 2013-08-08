@@ -138,6 +138,22 @@ sys_socket(struct socket_args *uap)
 }
 
 int
+kern_bindat(int ctx, int s, struct sockaddr *sa)
+{
+	struct thread *td = curthread;
+	struct proc *p = td->td_proc;
+	struct file *fp;
+	int error;
+
+	error = holdsock(p->p_fd, s, CAP_BINDAT, &fp);
+	if (error)
+		return (error);
+	error = sobindat(ctx, (struct socket *)fp->f_data, sa, td);
+	fdrop(fp);
+	return (error);
+}
+
+int
 kern_bind(int s, struct sockaddr *sa)
 {
 	struct thread *td = curthread;
@@ -145,7 +161,6 @@ kern_bind(int s, struct sockaddr *sa)
 	struct file *fp;
 	int error;
 
-	KKASSERT(p);
 	error = holdsock(p->p_fd, s, CAP_BIND, &fp);
 	if (error)
 		return (error);
@@ -155,7 +170,7 @@ kern_bind(int s, struct sockaddr *sa)
 }
 
 /*
- * bind_args(int s, caddr_t name, int namelen)
+ * bind_args(int ctx, int s, caddr_t name, int namelen)
  *
  * MPALMOSTSAFE
  */
@@ -169,6 +184,26 @@ sys_bind(struct bind_args *uap)
 	if (error)
 		return (error);
 	error = kern_bind(uap->s, sa);
+	kfree(sa, M_SONAME);
+
+	return (error);
+}
+
+/*
+ * bind_args(int s, caddr_t name, int namelen)
+ *
+ * MPALMOSTSAFE
+ */
+int
+sys_bindat(struct bindat_args *uap)
+{
+	struct sockaddr *sa;
+	int error;
+
+	error = getsockaddr(&sa, uap->name, uap->namelen);
+	if (error)
+		return (error);
+	error = kern_bindat(uap->ctx, uap->s, sa);
 	kfree(sa, M_SONAME);
 
 	return (error);
@@ -490,7 +525,7 @@ soconnected_predicate(struct netmsg_so_notify *msg)
 }
 
 int
-kern_connect(int s, int fflags, struct sockaddr *sa)
+kern_connect(int fd, int s, int fflags, struct sockaddr *sa)
 {
 	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
@@ -514,7 +549,10 @@ kern_connect(int s, int fflags, struct sockaddr *sa)
 		error = EALREADY;
 		goto done;
 	}
-	error = soconnect(so, sa, td);
+	if (fd == AT_FDCWD)
+		error = soconnect(so, sa, td);
+	else
+		error = soconnectat(fd, so, sa, td);
 	if (error)
 		goto bad;
 	if ((fflags & FNONBLOCK) && (so->so_state & SS_ISCONNECTING)) {
@@ -563,7 +601,27 @@ sys_connect(struct connect_args *uap)
 	error = getsockaddr(&sa, uap->name, uap->namelen);
 	if (error)
 		return (error);
-	error = kern_connect(uap->s, 0, sa);
+	error = kern_connect(AT_FDCWD, uap->s, 0, sa);
+	kfree(sa, M_SONAME);
+
+	return (error);
+}
+
+/*
+ * connectat_args(int fd, int s, caddr_t name, int namelen)
+ *
+ * MPALMOSTSAFE
+ */
+int
+sys_connectat(struct connectat_args *uap)
+{
+	struct sockaddr *sa;
+	int error;
+
+	error = getsockaddr(&sa, uap->name, uap->namelen);
+	if (error)
+		return (error);
+	error = kern_connect(uap->ctx, uap->s, 0, sa);
 	kfree(sa, M_SONAME);
 
 	return (error);
@@ -584,7 +642,7 @@ sys_extconnect(struct extconnect_args *uap)
 	error = getsockaddr(&sa, uap->name, uap->namelen);
 	if (error)
 		return (error);
-	error = kern_connect(uap->s, fflags, sa);
+	error = kern_connect(AT_FDCWD, uap->s, fflags, sa);
 	kfree(sa, M_SONAME);
 
 	return (error);
@@ -1479,7 +1537,7 @@ sys_sendfile(struct sendfile_args *uap)
 	 * Do argument checking. Must be a regular file in, stream
 	 * type and connected socket out, positive offset.
 	 */
-	holdfp_capcheck(p->p_fd, uap->fd, &fp, FREAD, CAP_PREAD, 0);
+	error = holdfp_capcheck(p->p_fd, uap->fd, &fp, FREAD, CAP_PREAD, 0);
 	if (error) {
 		return (error);
 	}

@@ -132,6 +132,13 @@ struct netmsg_pru_bind {
 	struct thread		*nm_td;
 };
 
+struct netmsg_pru_bindat {
+	struct netmsg_base	base;
+	struct sockaddr		*nm_nam;
+	struct thread		*nm_td;
+	int			nm_fd;
+};
+
 struct netmsg_pru_connect {
 	struct netmsg_base	base;
 	struct sockaddr		*nm_nam;
@@ -139,6 +146,16 @@ struct netmsg_pru_connect {
 	struct mbuf		*nm_m;		/* connect with send */
 	int			nm_flags;	/* connect with send */
 	int			nm_reconnect;	/* message control */
+};
+
+struct netmsg_pru_connectat {
+	struct netmsg_base	base;
+	struct sockaddr		*nm_nam;
+	struct thread		*nm_td;
+	struct mbuf		*nm_m;		/* connect with send */
+	int			nm_flags;	/* connect with send */
+	int			nm_reconnect;	/* message control */
+	int			nm_fd;				/* context */
 };
 
 #define NMSG_RECONNECT_RECONNECT	0x0001	/* thread port change */

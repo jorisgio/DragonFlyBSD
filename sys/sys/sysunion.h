@@ -417,4 +417,6 @@ union sysunion {
 	struct	cap_ioctls_get_args cap_ioctls_get;
 	struct	cap_fcntls_limit_args cap_fcntls_limit;
 	struct	cap_fcntls_get_args cap_fcntls_get;
+	struct	connectat_args connectat;
+	struct	bindat_args bindat;
 };
