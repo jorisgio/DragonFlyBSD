@@ -550,4 +550,6 @@ const char *syscallnames[] = {
 	"cap_ioctls_get",			/* 539 = cap_ioctls_get */
 	"cap_fcntls_limit",			/* 540 = cap_fcntls_limit */
 	"cap_fcntls_get",			/* 541 = cap_fcntls_get */
+	"connectat",			/* 542 = connectat */
+	"bindat",			/* 543 = bindat */
 };

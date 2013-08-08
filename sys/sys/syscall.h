@@ -382,4 +382,6 @@
 #define	SYS_cap_ioctls_get	539
 #define	SYS_cap_fcntls_limit	540
 #define	SYS_cap_fcntls_get	541
-#define	SYS_MAXSYSCALL	542
+#define	SYS_connectat	542
+#define	SYS_bindat	543
+#define	SYS_MAXSYSCALL	544

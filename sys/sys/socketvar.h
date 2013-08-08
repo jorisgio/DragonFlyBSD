@@ -440,11 +440,13 @@ int	soaccept (struct socket *so, struct sockaddr **nam);
 void	soaccept_generic (struct socket *so);
 struct	socket *soalloc (int waitok, struct protosw *);
 int	sobind (struct socket *so, struct sockaddr *nam, struct thread *td);
+int	sobindat (int ctx, struct socket *so, struct sockaddr *nam, struct thread *td);
 void	socantrcvmore (struct socket *so);
 void	socantsendmore (struct socket *so);
 int	socket_wait (struct socket *so, struct timespec *ts, int *res);
 int	soclose (struct socket *so, int fflags);
 int	soconnect (struct socket *so, struct sockaddr *nam, struct thread *td);
+int	soconnectat (int ctx, struct socket *so, struct sockaddr *nam, struct thread *td);
 int	soconnect2 (struct socket *so1, struct socket *so2);
 int	socreate (int dom, struct socket **aso, int type, int proto,
 	    struct thread *td);

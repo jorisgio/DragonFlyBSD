@@ -2345,6 +2345,24 @@ struct	cap_fcntls_get_args {
 	int	fd;	char fd_[PAD_(int)];
 	uint32_t *	fcntlrightsp;	char fcntlrightsp_[PAD_(uint32_t *)];
 };
+struct	connectat_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	ctx;	char ctx_[PAD_(int)];
+	int	s;	char s_[PAD_(int)];
+	caddr_t	name;	char name_[PAD_(caddr_t)];
+	int	namelen;	char namelen_[PAD_(int)];
+};
+struct	bindat_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	ctx;	char ctx_[PAD_(int)];
+	int	s;	char s_[PAD_(int)];
+	caddr_t	name;	char name_[PAD_(caddr_t)];
+	int	namelen;	char namelen_[PAD_(int)];
+};
 
 #ifdef COMPAT_43
 
@@ -2961,6 +2979,8 @@ int	sys_cap_ioctls_limit (struct cap_ioctls_limit_args *);
 int	sys_cap_ioctls_get (struct cap_ioctls_get_args *);
 int	sys_cap_fcntls_limit (struct cap_fcntls_limit_args *);
 int	sys_cap_fcntls_get (struct cap_fcntls_get_args *);
+int	sys_connectat (struct connectat_args *);
+int	sys_bindat (struct bindat_args *);
 
 #endif /* !_SYS_SYSPROTO_H_ */
 #undef PAD_
