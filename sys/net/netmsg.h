@@ -293,7 +293,9 @@ union netmsg {
 	struct netmsg_pru_accept	accept;		/* synchronous */
 	struct netmsg_pru_attach	attach;
 	struct netmsg_pru_bind		bind;
+	struct netmsg_pru_bindat	bindat;
 	struct netmsg_pru_connect	connect;
+	struct netmsg_pru_connectat	connectat;
 	struct netmsg_pru_connect2	connect2;
 	struct netmsg_pru_control	control;	/* synchronous */
 	struct netmsg_pru_detach	detach;
