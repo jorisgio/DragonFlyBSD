@@ -276,11 +276,11 @@ int
 cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd, const char *func)
 {
 	u_long *cmds;
-	struct ioctl_list *l;
+	struct ioctls_list *l;
 	ssize_t ncmds;
 	ssize_t i;
 
-	spin_lock_shared(&fdp);
+	spin_lock_shared(&fdp->fd_spin);
 
 	KASSERT(fd >= 0 && fd < fdp->fd_nfiles,
 		("%s: invalid fd=%d", __func__, fd));
@@ -289,7 +289,7 @@ cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd, const char *func)
 	KASSERT(l != NULL,
 		("%s: called from %s: ioctls list is NULL", __func__, func));
 	ioctlshold(l);
-	spin_unlock_shared(&fdp);
+	spin_unlock_shared(&fdp->fd_spin);
 
 	ncmds = l->io_nioctls;
 	cmds = l->io_ioctls;
