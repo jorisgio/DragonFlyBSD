@@ -39,6 +39,7 @@
 #include <sys/proc.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
+#include <sys/capability.h>
 #include <sys/mbuf.h>
 #include <sys/nlookup.h>
 #include <sys/protosw.h>
@@ -966,7 +967,7 @@ unp_bind(int ctx, struct unpcb *unp, struct sockaddr *nam, struct thread *td)
 	strncpy(buf, soun->sun_path, namelen);
 	buf[namelen] = 0;	/* null-terminate the string */
 	error = nlookup_init_at(&nd, &fp, ctx, buf, UIO_SYSSPACE,
-			     NLC_LOCKVP | NLC_CREATE | NLC_REFDVP);
+			     NLC_LOCKVP | NLC_CREATE | NLC_REFDVP, CAP_BINDAT);
 	if (error == 0)
 		error = nlookup(&nd);
 	if (error == 0 && nd.nl_nch.ncp->nc_vp != NULL)
@@ -1020,7 +1021,8 @@ unp_connect(int ctx, struct socket *so, struct sockaddr *nam, struct thread *td)
 	buf[len] = 0;
 
 	vp = NULL;
-	error = nlookup_init_at(&nd, &fp, ctx, buf, UIO_SYSSPACE, NLC_FOLLOW);
+	error = nlookup_init_at(&nd, &fp, ctx, buf, UIO_SYSSPACE,
+					NLC_FOLLOW, CAP_CONNECTAT);
 	if (error == 0)
 		error = nlookup(&nd);
 	if (error == 0)

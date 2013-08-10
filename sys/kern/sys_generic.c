@@ -466,7 +466,7 @@ kern_pwritev(int fd, struct uio *auio, int flags, size_t *res)
 
 	KKASSERT(p);
 
-	holdfp_capcheck(p->p_fd, fd, &fp, FWRITE, CAP_PWRITE, 0);
+	error = holdfp_capcheck(p->p_fd, fd, &fp, FWRITE, CAP_PWRITE, 0);
 	if (error)
 		return (error);
 	else if ((flags & O_FOFFSET) && fp->f_type != DTYPE_VNODE) {
@@ -586,7 +586,7 @@ mapped_ioctl(int fd, u_long com, caddr_t uspc_data, struct ioctl_map *map,
 
 	KKASSERT(p);
 	cred = td->td_ucred;
-	error = holdfp_capcheck(p->p_fd, fd, &fd, FREAD|FWRITE, CAP_IOCTL, 0);
+	error = holdfp_capcheck(p->p_fd, fd, &fp, FREAD|FWRITE, CAP_IOCTL, 0);
 	if (error)
 		return(error);
 #ifdef CAPABILITIES
