@@ -297,8 +297,7 @@ filecaps_validate(const struct filecaps *fcaps, const char *func)
 	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls > 0)
 			|| fcaps->fc_ioctls == NULL,
 			("%s: invalid ioctls", func));
-	KASSERT((fcaps->fc_ioctls != NULL && fcaps->fc_ioctls->io_nioctls == 0 )
-			|| (fcaps->fc_rights & CAP_IOCTL) != 0,
+	KASSERT(fcaps->fc_ioctls != NULL || (fcaps->fc_rights & CAP_IOCTL) != 0,
 			("%s: ioctls without CAP_IOCTL", func));
 }
 
