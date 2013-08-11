@@ -88,6 +88,7 @@ struct nlookupdata {
 
 	int		nl_flags;	/* operations flags */
 	int		nl_loopcnt;	/* symlinks encountered */
+	cap_rights_t	nl_haverights;	/* rights delegated to the sandbox */
 
 	/*
 	 * These fields are populated by vn_open().  nlookup_done() will

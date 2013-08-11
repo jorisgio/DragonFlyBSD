@@ -115,14 +115,14 @@ nlookup_init(struct nlookupdata *nd,
     if (error == 0 && pathlen <= 1)
 	error = ENOENT;
 
-#ifndef CAPABILITY_MODE
-		/*
-		 * In capability mode, lookups must be strictly relative
-		 * Relative lookups from current working directory are not
-		 * allowed either, but we cannot check that here.
-		 */
-		if (IN_CAPABILITY_MODE(p))
-			nd->nl_flags |= NLC_STRICTLYRELATIVE;
+#ifdef CAPABILITY_MODE
+    /*
+     * In capability mode, lookups must be strictly relative
+     * Relative lookups from current working directory are not
+     * allowed either, but we cannot check that here.
+     */
+    if (IN_CAPABILITY_MODE(p))
+	    nd->nl_flags |= NLC_STRICTLYRELATIVE;
 #endif
 
     if (error == 0) {
@@ -179,6 +179,9 @@ nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd,
 		error = holdvnode(p->p_fd, fd, CAP_LOOKUP | rights, &fp);
 		if (error)
 			goto done;
+#ifdef CAPABILITIES
+		nd->nl_haverights = cap_rights(p->p_fd, fd);
+#endif /* CAPABILITIES */
 		vp = (struct vnode*)fp->f_data;
 		if (vp->v_type != VDIR || fp->f_nchandle.ncp == NULL) {
 			fdrop(fp);
@@ -541,6 +544,7 @@ nlookup(struct nlookupdata *nd)
     int hit = 1;
     int depthcount = 0;
     int dotdotinpath = 0;
+    int islocked = 0;
 
 #ifdef KTRACE
     if (KTRPOINT(nd->nl_td, KTR_NAMEI))
@@ -590,6 +594,7 @@ nlookup(struct nlookupdata *nd)
 	    cache_drop(&nd->nl_nch);
 	    nd->nl_nch = nch;		/* remains locked */
 
+#ifdef CAPABILITIES
 	    /*
 	     * If the lookup is strictly relative for a capsicum sandbox,
 	     * don't allow absolute path
@@ -598,6 +603,7 @@ nlookup(struct nlookupdata *nd)
 		    error = ECAPMODE;
 		    break;
 	    }
+#endif /* CAPABILITIES */
 
 	    /*
 	     * Fast-track termination.  There is no parent directory of
@@ -611,7 +617,7 @@ nlookup(struct nlookupdata *nd)
 			error = (nd->nl_flags & NLC_CREATE) ? EEXIST : EACCES;
 		else
 			error = 0;
-		break;
+		goto out;
 	    }
 	    continue;
 	}
@@ -621,8 +627,10 @@ nlookup(struct nlookupdata *nd)
 	 */
 	dflags = 0;
 	error = naccess(&nd->nl_nch, NLC_EXEC, nd->nl_cred, &dflags);
-	if (error)
-	    break;
+	if (error) {
+	    nch = nd->nl_nch;
+	    goto out;
+	}
 
 	/*
 	 * Extract the path component.  Path components are limited to
@@ -804,12 +812,22 @@ nlookup(struct nlookupdata *nd)
 	    if (error == ENOENT &&
 		(nd->nl_flags & (NLC_CREATE | NLC_RENAME_DST))
 	    ) {
+#ifdef CAPABILITIES
+		if ((nd->nl_flags & NLC_STRICTLYRELATIVE) &&
+		    ((nd->nl_haverights & CAP_LINKAT) == 0)) {
+			error = ENOTCAPABLE;
+		} else {
+#endif /* CAPABILITIES */
 		if (nd->nl_flags & NLC_NFS_RDONLY) {
 			error = EROFS;
 		} else {
 			error = naccess(&nch, nd->nl_flags | dflags,
 					nd->nl_cred, NULL);
 		}
+
+#ifdef CAPABILITIES
+		}
+#endif
 	    }
 	    if (error == 0 && wasdotordotdot &&
 		(nd->nl_flags & (NLC_CREATE | NLC_DELETE |
@@ -817,12 +835,34 @@ nlookup(struct nlookupdata *nd)
 		/*
 		 * POSIX junk
 		 */
-		if (nd->nl_flags & NLC_CREATE)
+		if (nd->nl_flags & NLC_CREATE) {
 			error = EEXIST;
-		else if (nd->nl_flags & NLC_DELETE)
+#ifdef CAPABILITIES
+			/*
+			 * if we don't have the right to create the file anyway,
+			 * returns ENOTCAPABLE
+			 */
+			if ((nd->nl_flags & NLC_STRICTLYRELATIVE) &&
+			    (nd->nl_haverights & CAP_LINKAT) == 0)
+				error = ENOTCAPABLE;
+#endif /* CAPABILITIES */
+
+		} else if (nd->nl_flags & NLC_DELETE) {
 			error = (wasdotordotdot == 1) ? EINVAL : ENOTEMPTY;
-		else
+
+#ifdef CAPABILITIES
+			/*
+			 * if we don't have the right to delete the file anyway,
+			 * returns ENOTCAPABLE
+			 */
+			if ((nd->nl_flags & NLC_STRICTLYRELATIVE) &&
+			    (nd->nl_haverights & CAP_UNLINKAT) == 0)
+				error = ENOTCAPABLE;
+#endif /* CAPABILITIES */
+
+		} else {
 			error = EINVAL;
+		}
 	    }
 	}
 
@@ -830,8 +870,7 @@ nlookup(struct nlookupdata *nd)
 	 * Early completion on error.
 	 */
 	if (error) {
-	    cache_put(&nch);
-	    break;
+	    goto out_locked_refed;
 	}
 
 	/*
@@ -844,14 +883,13 @@ nlookup(struct nlookupdata *nd)
 	) {
 	    if (nd->nl_loopcnt++ >= MAXSYMLINKS) {
 		error = ELOOP;
-		cache_put(&nch);
-		break;
+		goto out_locked_refed;
 	    }
 	    error = nreadsymlink(nd, &nch, &nlc);
-	    cache_put(&nch);
 	    if (error)
-		break;
+		goto out_locked_refed;
 
+	    cache_put(&nch);
 	    /*
 	     * Concatenate trailing path elements onto the returned symlink.
 	     * Note that if the path component (ptr) is not exhausted, it
@@ -904,7 +942,7 @@ again:
 			cache_dropmount(mp);
 			error = EBUSY;
 			vfs_do_busy = 0;
-			goto double_break;
+			goto out;
 		    }
 		}
 	    }
@@ -921,7 +959,7 @@ again:
 		vfs_do_busy = 0;
 		if (error) {
 		    cache_dropmount(mp);
-		    break;
+		    goto out;
 		}
 		cache_setvp(&nch, tdp);
 		vput(tdp);
@@ -932,9 +970,7 @@ again:
 	}
 
 	if (error) {
-	    cache_put(&nch);
-double_break:
-	    break;
+		goto out_locked_refed;
 	}
 	    
 	/*
@@ -970,9 +1006,8 @@ double_break:
 	 * is not a directory
 	 */
 	if (*ptr) {
-	    cache_put(&nch);
 	    error = ENOTDIR;
-	    break;
+	    goto out_locked_refed;
 	}
 
 	/*
@@ -990,33 +1025,47 @@ double_break:
 	    error = naccess(&nch, nd->nl_flags | dflags,
 			    nd->nl_cred, NULL);
 	    if (error) {
-		cache_put(&nch);
-		break;
+		    goto out_locked_refed;
 	    }
 	}
 
-
+#ifdef CAPABILITIES
 	/*
-	 * If we encountered a .. during the lookup and a strict relative
-	 * lookup is needed, a race may have occurs with rename, and we must
-	 * check that we are still in sandbox.
+	 * Perform some capabilities check after holdfp. This not really clean,
+	 * but this way, we can require CREATE/DELETE capabilities only when needed.
 	 */
-	if (dotdotinpath && (nd->nl_flags & NLC_STRICTLYRELATIVE)) {
-		/*
-		 * Do not allow lookups which escape the sandbox, even if it's
-		 * due to a symlink. Fast path.
-		 */
-		if (depthcount < 0) {
-			error = ECAPMODE;
-			cache_put(&nch);
-			break;
+	if (nd->nl_flags & NLC_STRICTLYRELATIVE) {
+		if ((nd->nl_flags & (NLC_DELETE | NLC_RENAME_DST))
+		    && nch.ncp->nc_vp
+		    && (nd->nl_haverights & CAP_UNLINKAT) == 0) {
+			error = ENOTCAPABLE;
 		}
-		if (! isstillinsandbox(nd->nl_rootnch, nd->nl_sandroot, nch)) {
-		    error = ECAPMODE;
-		    cache_put(&nch);
-		    break;
+
+		/* XXX is RENAME_SRC check needed here ? */
+
+		/*
+		 * If we encountered a .. during the lookup and a strict relative
+		 * lookup is needed, a race may have occurs with rename, and we must
+		 * check that we are still in sandbox.
+		 */
+		if (dotdotinpath && (nd->nl_flags & NLC_STRICTLYRELATIVE)) {
+			/*
+			 * Do not allow lookups which escape the sandbox, even if it's
+			 * due to a symlink. Fast path.
+			 */
+			if (depthcount < 0) {
+				error = ECAPMODE;
+				cache_put(&nch);
+				break;
+			}
+			if (! isstillinsandbox(nd->nl_rootnch, nd->nl_sandroot, nch)) {
+				error = ECAPMODE;
+				cache_put(&nch);
+				break;
+			}
 		}
 	}
+#endif /* CAPABILITIES */
 
 	/*
 	 * Termination: no more elements.
@@ -1037,6 +1086,32 @@ double_break:
 	nd->nl_nch = nch;
 	nd->nl_flags |= NLC_NCPISLOCKED;
 	error = 0;
+	break;
+
+out_locked_refed:
+	islocked = 1;
+out:
+
+#ifdef CAPABILITIES
+	/*
+	 * If we encountered a .. during the lookup and a strict relative
+	 * lookup is needed, a race may have occurs with rename, and we must
+	 * check that we are still in sandbox.
+	 */
+	if (dotdotinpath && (nd->nl_flags & NLC_STRICTLYRELATIVE)) {
+		/*
+		 * Do not allow lookups which escape the sandbox, even if it's
+		 * due to a symlink. Fast path.
+		 */
+		if (depthcount < 0) {
+			error = ECAPMODE;
+		} else if (! isstillinsandbox(nd->nl_rootnch, nd->nl_sandroot, nch)) {
+			error = ECAPMODE;
+		}
+	}
+#endif /* CAPABILITIES */
+	if (islocked)
+		cache_put(&nch);
 	break;
     }
 
@@ -1207,6 +1282,7 @@ naccess(struct nchandle *nch, int nflags, struct ucred *cred, int *nflagsp)
 	    }
 	}
     }
+
 
     /*
      * NLC_EXCL check.  Target file must not exist.
