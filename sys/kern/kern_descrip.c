@@ -143,7 +143,6 @@ extern int cmask;
  * Capabilities managment.
  */
 void filecaps_init(struct filecaps *fcaps);
-void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
 ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
 void filecaps_clear(struct filecaps *fcaps);
 void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
