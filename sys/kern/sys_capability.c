@@ -286,8 +286,11 @@ cap_ioctl_check(struct filedesc *fdp, int fd, u_long cmd, const char *func)
 		("%s: invalid fd=%d", __func__, fd));
 
 	l =  fdp->fd_files[fd].fcaps.fc_ioctls;
-	KASSERT(l != NULL,
-		("%s: called from %s: ioctls list is NULL", __func__, func));
+	if (l == NULL) {
+		spin_unlock_shared(&fdp->fd_spin);
+		return (0);
+	}
+
 	ioctlshold(l);
 	spin_unlock_shared(&fdp->fd_spin);
 
