@@ -70,9 +70,10 @@ struct file;
 struct klist;
 
 struct ioctls_list {
-  u_int		io_ref;
-  u_long	*io_ioctls;
+  uint32_t	io_ref;
   uint16_t	io_nioctls;	/* io_ioctls array size */
+  uint16_t	unused04;
+  u_long	io_ioctls[];
 };
 
 struct filecaps {
