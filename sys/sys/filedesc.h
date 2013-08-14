@@ -209,6 +209,8 @@ void ioctlshold(struct ioctls_list *l);
 void ioctlsdrop(struct ioctls_list *l);
 struct ioctls_list * ioctls_list_alloc(size_t ncmds);
 void filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst);
+void filecaps_deep_copy(const struct filecaps *src, struct filecaps *dst);
+void filecaps_clear(struct filecaps *fcaps);
 #endif
 
 #endif
