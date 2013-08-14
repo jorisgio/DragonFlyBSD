@@ -142,10 +142,8 @@ extern int cmask;
 /*
  * Capabilities managment.
  */
-void filecaps_init(struct filecaps *fcaps);
-ssize_t filecaps_deep_copy(struct filecaps *src, struct filecaps *dst);
-void filecaps_clear(struct filecaps *fcaps);
-void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
+static void filecaps_init(struct filecaps *fcaps);
+static void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
 static void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
 static void filecaps_fill(struct filecaps *fcaps);
@@ -153,7 +151,7 @@ static void filecaps_fill(struct filecaps *fcaps);
 /*
  * Initialize filecaps structure.
  */
-void
+static void
 filecaps_init(struct filecaps *fcaps)
 {
 	bzero(fcaps, sizeof(*fcaps));
@@ -241,7 +239,7 @@ ioctlsdrop(struct ioctls_list *l)
  * reference on the ioctl list, we pass it back to the caller and let
  * it handle that.
  */
-void
+static void
 filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree)
 {
 	if(tofree)
