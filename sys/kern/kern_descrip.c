@@ -142,20 +142,10 @@ extern int cmask;
 /*
  * Capabilities managment.
  */
-static void filecaps_init(struct filecaps *fcaps);
 static void filecaps_clear_locked(struct filecaps *fcaps, struct ioctls_list **tofree);
-static void filecaps_move(struct filecaps *src, struct filecaps *dst);
 static void filecaps_validate(const struct filecaps *fcaps, const char *func);
 static void filecaps_fill(struct filecaps *fcaps);
 
-/*
- * Initialize filecaps structure.
- */
-static void
-filecaps_init(struct filecaps *fcaps)
-{
-	bzero(fcaps, sizeof(*fcaps));
-}
 
 /*
  * Copy a filecaps structure, the spinlock of the source fdp
@@ -175,13 +165,12 @@ filecaps_shallow_copy(const struct filecaps *src, struct filecaps *dst)
 
 
 /*
- * src spinlock must be hold shared, dst spinlock must be hold exclusive.
  * fc_ioctls needs to be already allocated.
  * Returns 0 if the copy succeded
  * or the difference of the space provided and the space needed
  */
 ssize_t
-filecaps_deep_copy(struct filecaps *src, struct filecaps *dst)
+filecaps_deep_copy(const struct filecaps *src, struct filecaps *dst)
 {
 	ssize_t oldsize, newsize;
 
@@ -258,7 +247,7 @@ filecaps_clear(struct filecaps *fcaps)
 /*
  * Move filecaps structure to the new place and clear the old place.
  */
-static void
+void
 filecaps_move(struct filecaps *src, struct filecaps *dst)
 {
 	*dst = *src;
