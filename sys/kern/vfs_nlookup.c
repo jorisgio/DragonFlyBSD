@@ -440,6 +440,8 @@ isstillinsandbox(struct nchandle root, struct nchandle parent,
 
 	nch = child;
 
+	cache_hold(&nch);
+
 	while (nch.ncp && nch.ncp != root.ncp && nch.ncp != parent.ncp) {
 
 		/*
