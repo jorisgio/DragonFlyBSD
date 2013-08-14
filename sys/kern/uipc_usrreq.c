@@ -58,9 +58,14 @@
 #include <sys/socketvar2.h>
 #include <sys/msgport2.h>
 
+struct xfdnode {
+	struct file *fp;
+	struct filecaps fcaps;
+};
+
 typedef struct unp_defdiscard {
 	struct unp_defdiscard *next;
-	struct file *fp;
+	struct xfdnode fdnode;
 } *unp_defdiscard_t;
 
 static	MALLOC_DEFINE(M_UNPCB, "unpcb", "unpcb struct");
@@ -99,13 +104,14 @@ static int     unp_gc_clearmarks(struct file *, void *);
 static int     unp_gc_checkmarks(struct file *, void *);
 static int     unp_gc_checkrefs(struct file *, void *);
 static int     unp_revoke_gc_check(struct file *, void *);
-static void    unp_scan (struct mbuf *, void (*)(struct file *, void *),
+static void    unp_scan (struct mbuf *, void (*)(struct xfdnode *, void *),
 				void *data);
-static void    unp_mark (struct file *, void *data);
-static void    unp_discard (struct file *, void *);
+static void    unp_mark (struct xfdnode *, void *data);
+static void    unp_discard (struct xfdnode *, void *);
 static int     unp_internalize (struct mbuf *, struct thread *);
 static int     unp_listen (struct unpcb *, struct thread *);
-static void    unp_fp_externalize(struct lwp *lp, struct file *fp, int fd);
+static void    unp_fp_externalize(struct lwp *lp, struct xfdnode *fdn, int fd);
+static void    unp_fp_drop(struct file *fp);
 
 /*
  * SMP Considerations:
@@ -1328,6 +1334,14 @@ unp_drain(void)
 }
 #endif
 
+static void
+unp_xfdnode_move(struct xfdnode *src, struct xfdnode *dst)
+{
+	dst->fp = src->fp;
+	filecaps_move(&src->fcaps, &dst->fcaps);
+}
+
+
 int
 unp_externalize(struct mbuf *rights)
 {
@@ -1337,8 +1351,8 @@ unp_externalize(struct mbuf *rights)
 	struct cmsghdr *cm = mtod(rights, struct cmsghdr *);
 	int *fdp;
 	int i;
-	struct file **rp;
-	struct file *fp;
+	struct xfdnode *rp;
+	struct xfdnode fdnode;
 	int newfds = (cm->cmsg_len - (CMSG_DATA(cm) - (u_char *)cm))
 		/ sizeof (struct file *);
 	int f;
@@ -1349,15 +1363,15 @@ unp_externalize(struct mbuf *rights)
 	 * if the new FD's will not fit, then we free them all
 	 */
 	if (!fdavail(p, newfds)) {
-		rp = (struct file **)CMSG_DATA(cm);
+		rp = (struct xfdnode *)CMSG_DATA(cm);
 		for (i = 0; i < newfds; i++) {
-			fp = *rp;
+			fdnode = *rp;
 			/*
-			 * zero the pointer before calling unp_discard,
+			 * zero the xfdnode before calling unp_discard,
 			 * since it may end up in unp_gc()..
 			 */
-			*rp++ = NULL;
-			unp_discard(fp, NULL);
+			bzero(rp++, sizeof(struct xfdnode));
+			unp_discard(&fdnode, NULL);
 		}
 		lwkt_reltoken(&unp_token);
 		return (EMSGSIZE);
@@ -1367,35 +1381,16 @@ unp_externalize(struct mbuf *rights)
 	 * now change each pointer to an fd in the global table to 
 	 * an integer that is the index to the local fd table entry
 	 * that we set up to point to the global one we are transferring.
-	 * If sizeof (struct file *) is bigger than or equal to sizeof int,
-	 * then do it in forward order. In that case, an integer will
-	 * always come in the same place or before its corresponding
-	 * struct file pointer.
-	 * If sizeof (struct file *) is smaller than sizeof int, then
-	 * do it in reverse order.
 	 */
-	if (sizeof (struct file *) >= sizeof (int)) {
-		fdp = (int *)CMSG_DATA(cm);
-		rp = (struct file **)CMSG_DATA(cm);
-		for (i = 0; i < newfds; i++) {
-			if (fdalloc(p, 0, &f))
-				panic("unp_externalize");
-			fp = *rp++;
-			unp_fp_externalize(lp, fp, f);
-			*fdp++ = f;
-		}
-	} else {
-		fdp = (int *)CMSG_DATA(cm) + newfds - 1;
-		rp = (struct file **)CMSG_DATA(cm) + newfds - 1;
-		for (i = 0; i < newfds; i++) {
-			if (fdalloc(p, 0, &f))
-				panic("unp_externalize");
-			fp = *rp--;
-			unp_fp_externalize(lp, fp, f);
-			*fdp-- = f;
-		}
+	KKASSERT(sizeof (struct xfdnode) >= sizeof (int));
+	fdp = (int *)CMSG_DATA(cm);
+	rp = (struct xfdnode *)CMSG_DATA(cm);
+	for (i = 0; i < newfds; i++) {
+		if (fdalloc(p, 0, &f))
+			panic("unp_externalize");
+		unp_fp_externalize(lp, rp++, f);
+		*fdp++ = f;
 	}
-
 	/*
 	 * Adjust length, in case sizeof(struct file *) and sizeof(int)
 	 * differs.
@@ -1408,12 +1403,28 @@ unp_externalize(struct mbuf *rights)
 }
 
 static void
-unp_fp_externalize(struct lwp *lp, struct file *fp, int fd)
+unp_fp_drop(struct file *fp)
 {
-	struct file *fx;
+	lwkt_gettoken(&unp_token);
+
+	spin_lock(&unp_spin);
+	fp->f_msgcount--;
+	unp_rights--;
+	spin_unlock(&unp_spin);
+	fdrop(fp);
+
+	lwkt_reltoken(&unp_token);
+}
+
+static void
+unp_fp_externalize(struct lwp *lp, struct xfdnode *fdnode, int fd)
+{
+	struct file *fx, *fp;
 	int error;
 
 	lwkt_gettoken(&unp_token);
+
+	fp = fdnode->fp;
 
 	if (lp) {
 		KKASSERT(fd >= 0);
@@ -1422,12 +1433,12 @@ unp_fp_externalize(struct lwp *lp, struct file *fp, int fd)
 			fx = NULL;
 			error = falloc(lp, &fx, NULL);
 			if (error == 0)
-				fsetfd(lp->lwp_proc->p_fd, fx, fd);
+				fsetfd_capcheck(lp->lwp_proc->p_fd, fx, fd, &fdnode->fcaps);
 			else
-				fsetfd(lp->lwp_proc->p_fd, NULL, fd);
+				fsetfd_capcheck(lp->lwp_proc->p_fd, NULL, fd, NULL);
 			fdrop(fx);
 		} else {
-			fsetfd(lp->lwp_proc->p_fd, fp, fd);
+			fsetfd_capcheck(lp->lwp_proc->p_fd, fp, fd, &fdnode->fcaps);
 		}
 	}
 	spin_lock(&unp_spin);
@@ -1454,7 +1465,8 @@ unp_internalize(struct mbuf *control, struct thread *td)
 	struct proc *p = td->td_proc;
 	struct filedesc *fdescp;
 	struct cmsghdr *cm = mtod(control, struct cmsghdr *);
-	struct file **rp;
+	struct xfdnode *rp;
+	struct fdnode *fdnode;
 	struct file *fp;
 	int i, fd, *fdp;
 	struct cmsgcred *cmcred;
@@ -1505,17 +1517,18 @@ unp_internalize(struct mbuf *control, struct thread *td)
 	 * check that all the FDs passed in refer to legal OPEN files
 	 * If not, reject the entire operation.
 	 */
+	spin_lock_shared(&fdescp->fd_spin);
 	fdp = (int *)CMSG_DATA(cm);
 	for (i = 0; i < oldfds; i++) {
 		fd = *fdp++;
 		if ((unsigned)fd >= fdescp->fd_nfiles ||
 		    fdescp->fd_files[fd].fp == NULL) {
 			error = EBADF;
-			goto done;
+			goto done_lock;
 		}
 		if (fdescp->fd_files[fd].fp->f_type == DTYPE_KQUEUE) {
 			error = EOPNOTSUPP;
-			goto done;
+			goto done_lock;
 		}
 	}
 	/*
@@ -1527,17 +1540,17 @@ unp_internalize(struct mbuf *control, struct thread *td)
 	newlen = CMSG_LEN(oldfds * sizeof(struct file *));
 	if (newlen > MCLBYTES) {
 		error = E2BIG;
-		goto done;
+		goto done_lock;
 	}
 	if (newlen - control->m_len > M_TRAILINGSPACE(control)) {
 		if (control->m_flags & M_EXT) {
 			error = E2BIG;
-			goto done;
+			goto done_lock;
 		}
 		MCLGET(control, MB_WAIT);
 		if (!(control->m_flags & M_EXT)) {
 			error = ENOBUFS;
-			goto done;
+			goto done_lock;
 		}
 
 		/* copy the data to the cluster */
@@ -1553,39 +1566,24 @@ unp_internalize(struct mbuf *control, struct thread *td)
 	control->m_len = CMSG_ALIGN(newlen);
 
 	/*
-	 * Transform the file descriptors into struct file pointers.
-	 * If sizeof (struct file *) is bigger than or equal to sizeof int,
-	 * then do it in reverse order so that the int won't get until
-	 * we're done.
-	 * If sizeof (struct file *) is smaller than sizeof int, then
-	 * do it in forward order.
+	 * Transform the file descriptors into struct xfdnode pointers.
 	 */
-	if (sizeof (struct file *) >= sizeof (int)) {
-		fdp = (int *)CMSG_DATA(cm) + oldfds - 1;
-		rp = (struct file **)CMSG_DATA(cm) + oldfds - 1;
-		for (i = 0; i < oldfds; i++) {
-			fp = fdescp->fd_files[*fdp--].fp;
-			*rp-- = fp;
-			fhold(fp);
-			spin_lock(&unp_spin);
-			fp->f_msgcount++;
-			unp_rights++;
-			spin_unlock(&unp_spin);
-		}
-	} else {
-		fdp = (int *)CMSG_DATA(cm);
-		rp = (struct file **)CMSG_DATA(cm);
-		for (i = 0; i < oldfds; i++) {
-			fp = fdescp->fd_files[*fdp++].fp;
-			*rp++ = fp;
-			fhold(fp);
-			spin_lock(&unp_spin);
-			fp->f_msgcount++;
-			unp_rights++;
-			spin_unlock(&unp_spin);
-		}
+	KKASSERT(sizeof (struct xfdnode) >= sizeof (int));
+	fdp = (int *)CMSG_DATA(cm) + oldfds - 1;
+	rp = (struct xfdnode *)CMSG_DATA(cm) + oldfds - 1;
+	for (i = 0; i < oldfds; i++) {
+		fdnode = &fdescp->fd_files[*fdp--];
+		fp = rp->fp = fdnode->fp;
+		filecaps_shallow_copy(&fdnode->fcaps, &rp->fcaps);
+		fhold(fp);
+		spin_lock(&unp_spin);
+		fp->f_msgcount++;
+		unp_rights++;
+		spin_unlock(&unp_spin);
 	}
 	error = 0;
+done_lock:
+	spin_unlock_shared(&fdescp->fd_spin);
 done:
 	lwkt_reltoken(&unp_token);
 	return error;
@@ -1857,7 +1855,7 @@ unp_revoke_gc(struct file *fx)
 		info.fcount = 0;
 		allfiles_scan_exclusive(unp_revoke_gc_check, &info);
 		for (i = 0; i < info.fcount; ++i)
-			unp_fp_externalize(NULL, info.fary[i], -1);
+			unp_fp_drop(info.fary[i]);
 	} while (info.fcount == REVOKE_GC_MAXFILES);
 	lwkt_reltoken(&unp_token);
 }
@@ -1875,7 +1873,7 @@ unp_revoke_gc_check(struct file *fps, void *vinfo)
 	struct socket *so;
 	struct mbuf *m0;
 	struct mbuf *m;
-	struct file **rp;
+	struct xfdnode *rp;
 	struct cmsghdr *cm;
 	int i;
 	int qfds;
@@ -1910,15 +1908,15 @@ unp_revoke_gc_check(struct file *fps, void *vinfo)
 				continue;
 			}
 			qfds = (cm->cmsg_len - CMSG_LEN(0)) / sizeof(void *);
-			rp = (struct file **)CMSG_DATA(cm);
+			rp = (struct xfdnode *)CMSG_DATA(cm);
 			for (i = 0; i < qfds; i++) {
-				fp = rp[i];
+				fp = (rp[i]).fp;
 				if (fp->f_flag & FREVOKED) {
 					kprintf("Warning: Removing revoked fp from unix domain socket queue\n");
 					fhold(info->fx);
 					info->fx->f_msgcount++;
 					unp_rights++;
-					rp[i] = info->fx;
+					(rp[i]).fp = info->fx;
 					info->fary[info->fcount++] = fp;
 				}
 				if (info->fcount == REVOKE_GC_MAXFILES)
@@ -1942,9 +1940,9 @@ unp_revoke_gc_check(struct file *fps, void *vinfo)
 }
 
 /*
- * Dispose of the fp's stored in a mbuf.
+ * Dispose of the fdnodes stored in a mbuf.
  *
- * The dds loop can cause additional fps to be entered onto the
+ * The dds loop can cause additional fdnodes to be entered onto the
  * list while it is running, flattening out the operation and avoiding
  * a deep kernel stack recursion.
  */
@@ -1961,7 +1959,9 @@ unp_dispose(struct mbuf *m)
 	if (unp_defdiscard_nest == 1) {
 		while ((dds = unp_defdiscard_base) != NULL) {
 			unp_defdiscard_base = dds->next;
-			closef(dds->fp, NULL);
+			closef(dds->fdnode.fp, NULL);
+			/* clear capsicum rights */
+			filecaps_clear(&dds->fdnode.fcaps);
 			kfree(dds, M_UNPCB);
 		}
 	}
@@ -1983,10 +1983,10 @@ unp_listen(struct unpcb *unp, struct thread *td)
 }
 
 static void
-unp_scan(struct mbuf *m0, void (*op)(struct file *, void *), void *data)
+unp_scan(struct mbuf *m0, void (*op)(struct xfdnode *, void *), void *data)
 {
 	struct mbuf *m;
-	struct file **rp;
+	struct xfdnode *rp;
 	struct cmsghdr *cm;
 	int i;
 	int qfds;
@@ -2001,9 +2001,9 @@ unp_scan(struct mbuf *m0, void (*op)(struct file *, void *), void *data)
 					continue;
 				qfds = (cm->cmsg_len - CMSG_LEN(0)) /
 					sizeof(void *);
-				rp = (struct file **)CMSG_DATA(cm);
+				rp = (struct xfdnode*)CMSG_DATA(cm);
 				for (i = 0; i < qfds; i++)
-					(*op)(*rp++, data);
+					(*op)(rp++, data);
 				break;		/* XXX, but saves time */
 			}
 		}
@@ -2015,9 +2015,10 @@ unp_scan(struct mbuf *m0, void (*op)(struct file *, void *), void *data)
  * Mark visibility.  info->defer is recalculated on every pass.
  */
 static void
-unp_mark(struct file *fp, void *data)
+unp_mark(struct xfdnode *fdnode, void *data)
 {
 	struct unp_gc_info *info = data;
+	struct file *fp = fdnode->fp;
 
 	if ((fp->f_flag & FMARK) == 0) {
 		++info->defer;
@@ -2035,9 +2036,12 @@ unp_mark(struct file *fp, void *data)
  * Caller holds unp_token
  */
 static void
-unp_discard(struct file *fp, void *data __unused)
+unp_discard(struct xfdnode *fdnode, void *data __unused)
 {
 	unp_defdiscard_t dds;
+	struct file *fp;
+
+	fp = fdnode->fp;
 
 	spin_lock(&unp_spin);
 	fp->f_msgcount--;
@@ -2046,11 +2050,13 @@ unp_discard(struct file *fp, void *data __unused)
 
 	if (unp_defdiscard_nest) {
 		dds = kmalloc(sizeof(*dds), M_UNPCB, M_WAITOK|M_ZERO);
-		dds->fp = fp;
+		unp_xfdnode_move(fdnode, &dds->fdnode);
 		dds->next = unp_defdiscard_base;
 		unp_defdiscard_base = dds;
 	} else {
 		closef(fp, NULL);
+		/* clear capsicum rights */
+		filecaps_clear(&fdnode->fcaps);
 	}
 }
 
