@@ -436,23 +436,19 @@ static int
 isstillinsandbox(struct nchandle root, struct nchandle parent,
 			struct nchandle child)
 {
-	struct nchandle nch;
-	struct nchandle next;
-	struct mount *mp;
+	struct nchandle nch, next;
 
 	nch = child;
 
 	while (nch.ncp && nch.ncp != root.ncp && nch.ncp != parent.ncp) {
-		mp = NULL;
 
 		/*
 		 * If we encouter the root of the filesystem, skip to the
 		 * mountpoint;
 		 */
 		if (nch.ncp == nch.mount->mnt_ncmountpt.ncp) {
-			mp = nch.mount;
-			nch = mp->mnt_ncmounton;
 			cache_drop(&nch);
+			nch = nch.mount->mnt_ncmounton;
 			if (nch.ncp)
 				cache_hold(&nch);
 			continue;
@@ -467,12 +463,13 @@ isstillinsandbox(struct nchandle root, struct nchandle parent,
 				cache_unlock(&nch);
 				continue;
 			}
+			next.mount = nch.mount;
 			cache_hold(&next);
 			cache_unlock(&nch);
 			break;
 		}
 		cache_drop(&nch);
-		nch.ncp = next.ncp;
+		nch = next;
 	}
 	if (nch.ncp) {
 		cache_drop(&nch);
