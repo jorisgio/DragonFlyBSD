@@ -323,14 +323,17 @@ cap_ioctl_limit_check(const struct ioctls_list *ol,
 	long j;
 	size_t oncmd, nncmd;
 
-	oncmd = (ol == NULL) ? 0 : ol->io_nioctls;
+	if (ol == NULL)
+		return(0);
+
+	oncmd = ol->io_nioctls;
 	nncmd = (nl == NULL) ? 0 : nl->io_nioctls;
 
 	if (oncmd < nncmd)
 		return (ENOTCAPABLE);
 
 	for (i = 0; i < nncmd; i++) {
-		for (j = 0; j < nncmd; j++) {
+		for (j = 0; j < oncmd; j++) {
 			if (nl->io_ioctls[i] == ol->io_ioctls[j])
 				break;
 		}
@@ -360,17 +363,13 @@ sys_cap_ioctls_limit(struct cap_ioctls_limit_args *uap)
 	if (ncmds > 256)	/* XXX: Is 256 sane? */
 		return (EINVAL);
 
-	if (ncmds == 0) {
-		niolist = NULL;
-	} else {
-		niolist = ioctls_list_alloc(ncmds);
-		error = copyin(uap->cmds, niolist->io_ioctls, sizeof(u_long) * ncmds);
-		if (error != 0) {
-			kfree(niolist, M_FILECAPS);
-			return (error);
-		}
-		niolist->io_nioctls = ncmds;
+	niolist = ioctls_list_alloc(ncmds);
+	error = copyin(uap->cmds, niolist->io_ioctls, sizeof(u_long) * ncmds);
+	if (error != 0) {
+		kfree(niolist, M_FILECAPS);
+		return (error);
 	}
+	niolist->io_nioctls = ncmds;
 
 	fdp = p->p_fd;
 	spin_lock_shared(&fdp->fd_spin);
@@ -381,6 +380,13 @@ sys_cap_ioctls_limit(struct cap_ioctls_limit_args *uap)
 	}
 
 	oiolist = fdp->fd_files[fd].fcaps.fc_ioctls;
+
+	error = cap_check(fdp->fd_files[fd].fcaps.fc_rights, CAP_IOCTL);
+	if (error != 0) {
+		spin_unlock_shared(&fdp->fd_spin);
+		goto out;
+	}
+
 	error = cap_ioctl_limit_check(oiolist, niolist);
 	if (error != 0) {
 		spin_unlock_shared(&fdp->fd_spin);
@@ -391,7 +397,8 @@ sys_cap_ioctls_limit(struct cap_ioctls_limit_args *uap)
 	ioctlshold(niolist);
 	error = 0;
 	spin_unlock_shared(&fdp->fd_spin);
-	ioctlsdrop(oiolist);
+	if (oiolist)
+		ioctlsdrop(oiolist);
 out:
 	return (error);
 }
@@ -421,22 +428,31 @@ sys_cap_ioctls_get(struct cap_ioctls_get_args *uap)
 	}
 
 	/*
-	 * If all ioctls are allowed (fde_nioctls == -1 && fde_ioctls == NULL)
+	 * If all ioctls are allowed (fc_ioctls == NULL)
 	 * the only sane thing we can do is to not populate the given array and
 	 * return CAP_IOCTLS_ALL.
 	 */
 
 	fcaps = &fdp->fd_files[fd].fcaps;
+
+	if ((fcaps->fc_rights & CAP_IOCTL) == 0) {
+		uap->sysmsg_lresult = 0;
+		error = 0;
+		goto out;
+	}
+
 	if (cmds != NULL && fcaps->fc_ioctls != NULL) {
 		error = copyout(fcaps->fc_ioctls->io_ioctls, cmds,
 		    sizeof(u_long) * MIN(fcaps->fc_ioctls->io_nioctls, maxcmds));
 		if (error != 0)
 			goto out;
 	}
-	if (fcaps->fc_ioctls == NULL)
+
+	if (fcaps->fc_ioctls == NULL) {
 		uap->sysmsg_lresult = CAP_IOCTLS_ALL;
-	else
+	} else {
 		uap->sysmsg_lresult = fcaps->fc_ioctls->io_nioctls;
+	}
 
 	error = 0;
 out:
