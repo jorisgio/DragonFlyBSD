@@ -129,6 +129,7 @@ nlookup_init(struct nlookupdata *nd,
 	if (p && p->p_fd) {
 	    cache_copy(&p->p_fd->fd_ncdir, &nd->nl_nch);
 	    cache_copy(&p->p_fd->fd_nrdir, &nd->nl_rootnch);
+	    cache_copy(&p->p_fd->fd_nrdir, &nd->nl_sandroot);
 	    if (p->p_fd->fd_njdir.ncp)
 		cache_copy(&p->p_fd->fd_njdir, &nd->nl_jailnch);
 	    nd->nl_cred = crhold(p->p_ucred);
@@ -136,6 +137,7 @@ nlookup_init(struct nlookupdata *nd,
 	    cache_copy(&rootnch, &nd->nl_nch);
 	    cache_copy(&nd->nl_nch, &nd->nl_rootnch);
 	    cache_copy(&nd->nl_nch, &nd->nl_jailnch);
+	    cache_copy(&nd->nl_nch, &nd->nl_sandroot);
 	    nd->nl_cred = crhold(proc0.p_ucred);
 	}
 	nd->nl_td = td;
@@ -191,6 +193,7 @@ nlookup_init_at(struct nlookupdata *nd, struct file **fpp, int fd,
 		}
 		cache_drop(&nd->nl_nch);
 		cache_copy(&fp->f_nchandle, &nd->nl_nch);
+		cache_copy(&fp->f_nchandle, &nd->nl_sandroot);
 		*fpp = fp;
 #ifndef CAPABILITY_MODE
 	}
@@ -251,13 +254,14 @@ nlookup_init_raw(struct nlookupdata *nd,
      * allowed either, but we cannot check that here.
      */
     if (cred->cr_flags & CRED_FLAG_CAPMODE)
-	    nd->nl_flags |= NLC_STRICTLYRELATIVE;
+	   return (ECAPMODE);
 #endif
 
     if (error == 0) {
 	cache_copy(ncstart, &nd->nl_nch);
 	cache_copy(&rootnch, &nd->nl_rootnch);
 	cache_copy(&rootnch, &nd->nl_jailnch);
+	cache_copy(&rootnch, &nd->nl_sandroot);
 	nd->nl_cred = crhold(cred);
 	nd->nl_td = td;
 	nd->nl_flags |= flags;
@@ -305,13 +309,14 @@ nlookup_init_root(struct nlookupdata *nd,
      * allowed either, but we cannot check that here.
      */
     if (cred->cr_flags & CRED_FLAG_CAPMODE)
-	    nd->nl_flags |= NLC_STRICTLYRELATIVE;
+	   return (ECAPMODE);
 #endif
 
     if (error == 0) {
 	cache_copy(ncstart, &nd->nl_nch);
 	cache_copy(ncroot, &nd->nl_rootnch);
 	cache_copy(ncroot, &nd->nl_jailnch);
+	cache_copy(ncroot, &nd->nl_sandroot);
 	nd->nl_cred = crhold(cred);
 	nd->nl_td = td;
 	nd->nl_flags |= flags;
@@ -358,6 +363,8 @@ nlookup_done(struct nlookupdata *nd)
 	cache_drop(&nd->nl_rootnch);
     if (nd->nl_jailnch.ncp)
 	cache_drop(&nd->nl_jailnch);
+    if (nd->nl_sandroot.ncp)
+	cache_drop(&nd->nl_sandroot);
     if ((nd->nl_flags & NLC_HASBUF) && nd->nl_path) {
 	objcache_put(namei_oc, nd->nl_path);
 	nd->nl_path = NULL;
