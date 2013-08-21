@@ -254,11 +254,16 @@ kern_preadv(int fd, struct uio *auio, int flags, size_t *res)
 	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
 	struct file *fp;
+	cap_rights_t rights;
 	int error;
 
 	KKASSERT(p);
 
-	error = holdfp_capcheck(p->p_fd, fd, &fp, FREAD, CAP_PREAD, 0);
+	rights = CAP_READ;
+	if (flags & O_FOFFSET)
+		rights |= CAP_SEEK;
+
+	error = holdfp_capcheck(p->p_fd, fd, &fp, FREAD, rights, 0);
 	if (error)
 		return (error);
 	if (flags & O_FOFFSET && fp->f_type != DTYPE_VNODE) {
@@ -462,11 +467,16 @@ kern_pwritev(int fd, struct uio *auio, int flags, size_t *res)
 	struct thread *td = curthread;
 	struct proc *p = td->td_proc;
 	struct file *fp;
+	cap_rights_t rights;
 	int error;
 
 	KKASSERT(p);
 
-	error = holdfp_capcheck(p->p_fd, fd, &fp, FWRITE, CAP_PWRITE, 0);
+	rights = CAP_WRITE;
+	if (flags & O_FOFFSET)
+		rights |= CAP_SEEK;
+
+	error = holdfp_capcheck(p->p_fd, fd, &fp, FWRITE, rights, 0);
 	if (error)
 		return (error);
 	else if ((flags & O_FOFFSET) && fp->f_type != DTYPE_VNODE) {
