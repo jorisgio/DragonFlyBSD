@@ -1354,7 +1354,7 @@ unp_externalize(struct mbuf *rights)
 	struct xfdnode *rp;
 	struct xfdnode fdnode;
 	int newfds = (cm->cmsg_len - (CMSG_DATA(cm) - (u_char *)cm))
-		/ sizeof (struct file *);
+		/ sizeof (struct xfdnode);
 	int f;
 
 	lwkt_gettoken(&unp_token);
@@ -1392,8 +1392,7 @@ unp_externalize(struct mbuf *rights)
 		*fdp++ = f;
 	}
 	/*
-	 * Adjust length, in case sizeof(struct file *) and sizeof(int)
-	 * differs.
+	 * Adjust length
 	 */
 	cm->cmsg_len = CMSG_LEN(newfds * sizeof(int));
 	rights->m_len = cm->cmsg_len;
@@ -1537,7 +1536,7 @@ unp_internalize(struct mbuf *control, struct thread *td)
 	 * Allocate a bigger buffer as necessary. But if an cluster is not
 	 * enough, return E2BIG.
 	 */
-	newlen = CMSG_LEN(oldfds * sizeof(struct file *));
+	newlen = CMSG_LEN(oldfds * sizeof(struct xfdnode));
 	if (newlen > MCLBYTES) {
 		error = E2BIG;
 		goto done_lock;
