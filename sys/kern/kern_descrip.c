@@ -278,7 +278,7 @@ filecaps_validate(const struct filecaps *fcaps, const char *func)
 			("%s: invalid fcntls %u : %u, %u, %u", func, fcaps->fc_fcntls, CAP_FCNTL_ALL, ~CAP_FCNTL_ALL, fcaps->fc_fcntls & ~CAP_FCNTL_ALL));
 	KASSERT(fcaps->fc_fcntls == 0 || (fcaps->fc_rights & CAP_FCNTL) != 0,
 			("%s: fcntls without CAP_FCNTL %lu %p %u", func, fcaps->fc_rights, fcaps->fc_ioctls, fcaps->fc_fcntls ));
-	KASSERT(fcaps->fc_ioctls != NULL || (fcaps->fc_rights & CAP_IOCTL) != 0,
+	KASSERT(fcaps->fc_ioctls == NULL || (fcaps->fc_rights & CAP_IOCTL) != 0,
 			("%s: ioctls without CAP_IOCTL", func));
 }
 
