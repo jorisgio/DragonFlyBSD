@@ -158,7 +158,7 @@ client_main(struct server_info **info_ary, int count)
 	 */
 	didreconnect = 0;
 	for (i = 0; i < count; ++i)
-	    client_manage_polling_mode(info_ary[i], &didreconnect);
+	    client_manage_polling_mode(info_ary, i, &didreconnect);
 	if (didreconnect)
 	    client_check_duplicate_ips(info_ary, count);
 
@@ -354,8 +354,9 @@ client_check(struct server_info **checkp,
  * through the alt's.
  */
 void
-client_manage_polling_mode(struct server_info *info, int *didreconnect)
+client_manage_polling_mode(struct server_info **info_ary, int index, int *didreconnect)
 {
+    struct server_info *info = info_ary[index];
     /*
      * Permanently failed servers are ignored.
      */
@@ -378,7 +379,7 @@ client_manage_polling_mode(struct server_info *info, int *didreconnect)
 	 */
 	if (info->fd < 0) {
 	    logdebuginfo(info, 2, "polling mode INIT, relookup & reconnect\n");
-	    reconnect_server(info);
+	    reconnect_server(index);
 	    *didreconnect = 1;
 	    if (info->fd < 0) {
 		if (info->poll_failed >= POLL_RECOVERY_RESTART * 5)
@@ -579,7 +580,7 @@ client_check_duplicate_ips(struct server_info **info_ary, int count)
 		    continue;
 		if (info1->fd < 0 || /* info1 was lost in previous reconnect */
 		    strcmp(info1->ipstr, info2->ipstr) == 0) {
-		    reconnect_server(info1);
+		    reconnect_server(i);
 		    break;
 		}
 	    }

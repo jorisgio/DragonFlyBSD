@@ -37,6 +37,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/capability.h>
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
@@ -78,11 +80,9 @@ extern double insane_deviation;
 
 typedef enum { LOG_DNS_ERROR, IGNORE_DNS_ERROR } dns_error_policy_t;
 
-int udp_socket(const char *target, int port, struct sockaddr *sam,
-	       dns_error_policy_t dns_error_policy);
 int udp_ntptimereq(int fd, struct timeval *rtvp, 
 		   struct timeval *ltvp, struct timeval *lbtvp);
-void reconnect_server(server_info_t info);
+void reconnect_server(int index);
 void disconnect_server(server_info_t info);
 
 void l_fixedpt_to_tv(struct l_fixedpt *fixed, struct timeval *tvp);
@@ -106,3 +106,9 @@ double sysntp_correct_course_offset(double offset);
 void sysntp_correct_freq(double freq);
 void sysntp_clear_alternative_corrections(void);
 
+int send_udp_socket_request(int socket, int index, dns_error_policy_t dns_error_policy);
+int udp_socket(const char *target, int port, struct sockaddr *sam,
+		dns_error_policy_t dns_error_policy);
+void receive_udp_socket_request(int socket, int nservers, struct server_name **server_name);
+int receive_udp_socket_fd(int socket, server_info_t info);
+char *myaddr2ascii(struct sockaddr *sa);

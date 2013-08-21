@@ -34,6 +34,12 @@
  * $DragonFly: src/usr.sbin/dntpd/client.h,v 1.7 2007/06/25 21:33:36 dillon Exp $
  */
 
+struct server_name {
+	char *target;		/* target hostname or IP (string) */
+	struct sockaddr *sam; 	/* udp connection info */
+	struct sockaddr_storage sam_st; 	/* udp connection info (stor) */
+};
+
 struct server_info {
 	int fd;			/* udp descriptor */
 	int server_state;	/* -1 (no dns), 0 (dns good), or 1 (pkt good) */
@@ -42,8 +48,6 @@ struct server_info {
 	int poll_mode;		/* mode of operation */
 	int poll_count;		/* number of polls in current mode */
 	int poll_failed;	/* count of NTP failures */
-	struct sockaddr *sam; 	/* udp connection info */
-	struct sockaddr_storage sam_st; 	/* udp connection info (stor) */
 	char *target;		/* target hostname or IP (string) */
 	char *ipstr;		/* IP string */
 
@@ -123,6 +127,7 @@ struct server_info {
 #define COURSE_OFFSET_CORRECTION_LIMIT	120.0
 
 typedef struct server_info *server_info_t;
+typedef struct server_name *server_name_t;
 
 void client_init(void);
 int client_main(struct server_info **info_ary, int count);
@@ -132,7 +137,7 @@ void client_check(struct server_info **check,
 		  struct server_info **best_off,
 		  struct server_info **best_freq);
 void client_check_duplicate_ips(struct server_info **info_ary, int count);
-void client_manage_polling_mode(struct server_info *info, int *didreconnect);
+void client_manage_polling_mode(struct server_info **info_ary, int index, int *didreconnect);
 void client_setserverstate(server_info_t info, int state, const char *str);
 
 void lin_regress(server_info_t info, 

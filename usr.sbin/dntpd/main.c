@@ -33,7 +33,6 @@
  * 
  * $DragonFly: src/usr.sbin/dntpd/main.c,v 1.11 2007/06/26 02:40:20 dillon Exp $
  */
-
 #include "defs.h"
 
 static void usage(const char *av0);
@@ -45,8 +44,11 @@ static void set_pid(const char *av0);
 static void sigint_handler(int signo __unused);
 
 static struct server_info **servers;
+static struct server_name **server_names;
 static int nservers;
 static int maxservers;
+
+static int sock;
 
 int daemon_opt = 1;
 int debug_opt = 0;
@@ -65,16 +67,18 @@ int
 main(int ac, char **av)
 {
     int test_opt = 0;
-    pid_t pid;
+    pid_t pid, childpid;
     int rc;
     int ch;
     int i;
+    int sockets[2];
 
     /*
      * Really randomize
      */
     srandomdev();
     rc = 0;
+    nservers = maxservers = 0;
 
     /*
      * Process Options
@@ -204,12 +208,9 @@ main(int ac, char **av)
     if (debug_opt == 0)
 	openlog("dntpd", LOG_CONS|LOG_PID, LOG_DAEMON);
 
-    if (test_opt) {
-	if (optind != ac - 1)
-	    usage(av[0]);
-	dotest(av[optind]);
-	/* not reached */
-    }
+    close(0);
+    close(1);
+    cap_rights_limit(2, CAP_WRITE);
 
     /*
      * Add additional hosts.
@@ -221,6 +222,38 @@ main(int ac, char **av)
 	usage(av[0]);
 	/* not reached */
     }
+
+    if (test_opt) {
+	if (optind != ac - 1)
+	    usage(av[0]);
+	dotest(av[optind]);
+	/* not reached */
+    }
+
+    if(socketpair(PF_LOCAL, SOCK_SEQPACKET, 0, sockets) != 0) {
+	    logerr("Cannot create unix socket");
+    }
+
+    childpid = fork();
+
+    switch (childpid) {
+	    case -1:
+		    logerr("Cannot create privileged process : fork failed");
+		    exit(1);
+	    case 0:
+		    close(sockets[1]);
+		    receive_udp_socket_request(sockets[0], nservers, server_names);
+		    /* not reached */
+		    break;
+	    default:
+		    fflush(stderr);
+		    close(sockets[0]);
+		    sock = sockets[1];
+		    cap_rights_limit(sock, CAP_SEND | CAP_RECV);
+		    cap_enter();
+    }
+
+
 
     /*
      * Do an initial course time setting if requested using the first
@@ -299,13 +332,17 @@ void
 dotest(const char *target)
 {
     struct server_info info;
+    struct sockaddr_storage sam;
 
     bzero(&info, sizeof(info));
-    info.sam = (struct sockaddr *)&info.sam_st;
-    info.fd = udp_socket(target, 123, info.sam, LOG_DNS_ERROR);
+    bzero(&sam, sizeof(struct sockaddr_storage));
+    info.fd = udp_socket(target, 123, (struct sockaddr *)&sam, LOG_DNS_ERROR);
+
+    cap_enter();
+
     if (info.fd < 0) {
 	logerrstr("unable to create UDP socket for %s", target);
-	return;
+	exit(1);
     }
     info.target = strdup(target);
     client_init();
@@ -320,7 +357,7 @@ dotest(const char *target)
     /* not reached */
 }
 
-static char *
+char *
 myaddr2ascii(struct sockaddr *sa)
 {
 	static char str[INET6_ADDRSTRLEN];
@@ -344,17 +381,23 @@ static void
 add_server(const char *target)
 {
     server_info_t info;
+    server_name_t name;
 
     if (nservers == maxservers) {
 	maxservers += 16;
 	servers = realloc(servers, maxservers * sizeof(server_info_t));
+	server_names = realloc(server_names, maxservers * sizeof(server_name_t));
 	assert(servers != NULL);
     }
     info = malloc(sizeof(struct server_info));
+    name = malloc(sizeof(struct server_name));
     servers[nservers] = info;
+    server_names[nservers] = name;
     bzero(info, sizeof(struct server_info));
-    info->sam = (struct sockaddr *)&info->sam_st;
+    bzero(name, sizeof(struct server_name));
+    name->sam = (struct sockaddr *)&name->sam_st;
     info->target = strdup(target);
+    name->target = strdup(target);
     /*
      * Postpone socket opening and server name resolution until we are in main
      * loop to avoid hang during init if network down.
@@ -377,10 +420,10 @@ disconnect_server(server_info_t info)
 }
 
 void
-reconnect_server(server_info_t info)
+reconnect_server(int index)
 {
-    const char *ipstr;
     dns_error_policy_t policy;
+    server_info_t info = servers[index];
 
     /* 
      * Ignore DNS errors if never connected before to handle the case where
@@ -395,12 +438,12 @@ reconnect_server(server_info_t info)
 	free(info->ipstr);
 	info->ipstr = NULL;
     }
-    info->sam = (struct sockaddr *)&info->sam_st;
-    info->fd = udp_socket(info->target, 123, info->sam, policy);
-    if (info->fd >= 0) {
-	ipstr = myaddr2ascii(info->sam);
-	info->ipstr = strdup(ipstr);
-    }
+
+    if (send_udp_socket_request(sock, index, policy))
+	    return;
+
+    receive_udp_socket_fd(sock, info);
+
 }
 
 static void
