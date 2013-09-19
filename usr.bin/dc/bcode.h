@@ -69,7 +69,7 @@ struct source;
 
 struct vtable {
 	int	(*readchar)(struct source *);
-	int	(*unreadchar)(struct source *);
+	void	(*unreadchar)(struct source *);
 	char	*(*readline)(struct source *);
 	void	(*free)(struct source *);
 };

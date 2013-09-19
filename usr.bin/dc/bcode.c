@@ -58,7 +58,7 @@ static struct bmachine	bmachine;
 static void sighandler(int);
 
 static __inline int	readch(void);
-static __inline int	unreadch(void);
+static __inline void	unreadch(void);
 static __inline char	*readline(void);
 static __inline void	src_free(void);
 
@@ -279,12 +279,12 @@ readch(void)
 	return src->vtable->readchar(src);
 }
 
-static __inline int
+static __inline void
 unreadch(void)
 {
 	struct source *src = &bmachine.readstack[bmachine.readsp];
 
-	return src->vtable->unreadchar(src);
+	src->vtable->unreadchar(src);
 }
 
 static __inline char *
@@ -386,11 +386,11 @@ split_number(const struct number *n, BIGNUM *i, BIGNUM *f)
 	bn_checkp(BN_copy(i, n->number));
 
 	if (n->scale == 0 && f != NULL)
-		BN_zero(f);
+		bn_check(BN_zero(f));
 	else if (n->scale < sizeof(factors)/sizeof(factors[0])) {
 		rem = BN_div_word(i, factors[n->scale]);
 		if (f != NULL)
-			BN_set_word(f, rem);
+			bn_check(BN_set_word(f, rem));
 	} else {
 		BIGNUM *a, *p;
 		BN_CTX *ctx;
@@ -1226,7 +1226,7 @@ bexp(void)
 
 			one = BN_new();
 			bn_checkp(one);
-			BN_one(one);
+			bn_check(BN_one(one));
 			ctx = BN_CTX_new();
 			bn_checkp(ctx);
 			scale_number(one, r->scale + scale);

@@ -32,11 +32,11 @@ static int	lastchar;
 static int	charcount;
 
 static int	src_getcharstream(struct source *);
-static int	src_ungetcharstream(struct source *);
+static void	src_ungetcharstream(struct source *);
 static char	*src_getlinestream(struct source *);
 static void	src_freestream(struct source *);
 static int	src_getcharstring(struct source *);
-static int	src_ungetcharstring(struct source *);
+static void	src_ungetcharstring(struct source *);
 static char	*src_getlinestring(struct source *);
 static void	src_freestring(struct source *);
 static void	flushwrap(FILE *);
@@ -79,10 +79,10 @@ src_getcharstream(struct source *src)
 	return src->lastchar = getc(src->u.stream);
 }
 
-static int
+static void
 src_ungetcharstream(struct source *src)
 {
-	return ungetc(src->lastchar, src->u.stream);
+	ungetc(src->lastchar, src->u.stream);
 }
 
 static void
@@ -112,18 +112,13 @@ src_getcharstring(struct source *src)
 	}
 }
 
-static int
+static void
 src_ungetcharstring(struct source *src)
 {
-	int ch;
-
 	if (src->u.string.pos > 0) {
 		if (src->lastchar != '\0')
 			--src->u.string.pos;
-		ch = src->u.string.buf[src->u.string.pos];
-		return ch == '\0' ? EOF : ch;
-	} else
-		return EOF;
+	}
 }
 
 static char *
@@ -334,11 +329,11 @@ printnumber(FILE *f, const struct number *b, u_int base)
 
 		putcharwrap(f, '.');
 		num_base = new_number();
-		BN_set_word(num_base->number, base);
+		bn_check(BN_set_word(num_base->number, base));
 		BN_init(&mult);
-		BN_one(&mult);
+		bn_check(BN_one(&mult));
 		BN_init(&stop);
-		BN_one(&stop);
+		bn_check(BN_one(&stop));
 		scale_number(&stop, b->scale);
 
 		i = 0;
@@ -355,11 +350,11 @@ printnumber(FILE *f, const struct number *b, u_int base)
 			p = get_digit(rem, digits, base);
 			int_part->scale = 0;
 			normalize(int_part, fract_part->scale);
-			BN_sub(fract_part->number, fract_part->number,
-			    int_part->number);
+			bn_check(BN_sub(fract_part->number, fract_part->number,
+			    int_part->number));
 			printwrap(f, p);
 			free(p);
-			BN_mul_word(&mult, base);
+			bn_check(BN_mul_word(&mult, base));
 		}
 		free_number(num_base);
 		BN_free(&mult);
