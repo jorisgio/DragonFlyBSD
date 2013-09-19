@@ -311,8 +311,10 @@ yywrap(void)
 	} else if (fileindex == sargc) {
 		fileindex++;
 		yyin = stdin;
-		if (interactive)
+		if (interactive) {
 			signal(SIGINT, abort_line);
+			signal(SIGTSTP, tstpcont);
+		}
 		lineno = 1;
 		filename = "stdin";
 		return (0);

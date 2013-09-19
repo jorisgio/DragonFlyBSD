@@ -43,7 +43,6 @@
 #include <search.h>
 #include <signal.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -1064,12 +1063,13 @@ sigchld(int signo)
 	int status, save_errno = errno;
 
 	for (;;) {
-		pid = waitpid(dc, &status, WCONTINUED);
+		pid = waitpid(dc, &status, WCONTINUED | WNOHANG);
 		if (pid == -1) {
 			if (errno == EINTR)
 				continue;
 			_exit(0);
-		}
+		} else if (pid == 0)
+			break;
 		if (WIFEXITED(status) || WIFSIGNALED(status))
 			_exit(0);
 		else
@@ -1150,6 +1150,7 @@ main(int argc, char *argv[])
 		}
 	}
 	if (interactive) {
+		gettty(&ttysaved);
 		el = el_init("bc", stdin, stderr, stderr);
 		hist = history_init();
 		history(hist, &he, H_SETSIZE, 100);
