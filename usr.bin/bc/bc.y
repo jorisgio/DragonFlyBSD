@@ -946,6 +946,10 @@ yyerror(char *s)
 	if (yyin != NULL && feof(yyin))
 		n = asprintf(&str, "%s: %s:%d: %s: unexpected EOF",
 		    __progname, filename, lineno, s);
+	else if (yytext[0] == '\n')
+		n = asprintf(&str,
+		    "%s: %s:%d: %s: newline unexpected",
+		    __progname, filename, lineno, s);
 	else if (isspace(yytext[0]) || !isprint(yytext[0]))
 		n = asprintf(&str,
 		    "%s: %s:%d: %s: ascii char 0x%02x unexpected",
