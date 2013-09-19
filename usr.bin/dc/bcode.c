@@ -874,7 +874,7 @@ load_array(void)
 		else {
 			stack = &bmachine.reg[reg];
 			v = frame_retrieve(stack, index);
-			if (v == NULL) {
+			if (v == NULL || v->type == BCODE_NONE ) {
 				n = new_number();
 				bn_check(BN_zero(n->number));
 				push_number(n);
@@ -1687,7 +1687,7 @@ eval_line(void)
 	struct source	in;
 	char		*p;
 
-	clearerr(stdin)
+	clearerr(stdin);
 	src_setstream(&in, stdin);
 	p = (*in.vtable->readline)(&in);
 	eval_string(p);
