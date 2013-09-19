@@ -1178,12 +1178,22 @@ bexp(void)
 		return;
 	}
 
-	if (p->scale != 0)
-		warnx("Runtime warning: non-zero scale in exponent");
+	if (p->scale != 0) {
+		BIGNUM *i, *f;
+		i = BN_new();
+		bn_checkp(i);
+		f = BN_new();
+		bn_checkp(f);
+		split_number(p, i, f);
+		if (!BN_is_zero(f))
+			warnx("Runtime warning: non-zero fractional part in exponent");
+		BN_free(i);
+		BN_free(f);
+	}
 	normalize(p, 0);
 
 	neg = false;
-	if (BN_cmp(p->number, &zero) < 0) {
+	if (BN_is_negative(p->number)) {
 		neg = true;
 		negate(p);
 		scale = bmachine.scale;
@@ -1231,7 +1241,12 @@ bexp(void)
 			bn_checkp(ctx);
 			scale_number(one, r->scale + scale);
 			normalize(r, scale);
-			bn_check(BN_div(r->number, NULL, one, r->number, ctx));
+
+			if (BN_is_zero(r->number))
+				warnx("divide by zero");
+			else
+				bn_check(BN_div(r->number, NULL, one,
+				    r->number, ctx));
 			BN_free(one);
 			BN_CTX_free(ctx);
 		} else
