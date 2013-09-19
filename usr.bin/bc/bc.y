@@ -1155,6 +1155,7 @@ main(int argc, char *argv[])
 		el_set(el, EL_HIST, history, hist);
 		el_set(el, EL_EDITOR, "emacs");
 		el_set(el, EL_SIGNAL, 1);
+		el_set(el, EL_SIGNAL, 0);
 		el_set(el, EL_PROMPT, dummy_prompt);
 		el_source(el, NULL);
 	}
