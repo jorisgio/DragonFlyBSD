@@ -29,8 +29,6 @@
 
 #include "extern.h"
 
-BIGNUM		zero;
-
 /* #define	DEBUGGING */
 
 #define MAX_ARRAY_INDEX		2048
@@ -258,8 +256,6 @@ init_bmachine(bool extended_registers)
 	if (bmachine.readstack == NULL)
 		err(1, NULL);
 	bmachine.obase = bmachine.ibase = 10;
-	BN_init(&zero);
-	bn_check(BN_zero(&zero));
 	signal(SIGINT, sighandler);
 }
 
@@ -429,7 +425,7 @@ get_ulong(struct number *n)
 void
 negate(struct number *n)
 {
-	bn_check(BN_sub(n->number, &zero, n->number));
+	BN_set_negative(n->number, !BN_is_negative(n->number));
 }
 
 static __inline void
@@ -571,7 +567,7 @@ set_scale(void)
 
 	n = pop_number();
 	if (n != NULL) {
-		if (BN_cmp(n->number, &zero) < 0)
+		if (BN_is_negative(n->number))
 			warnx("scale must be a nonnegative number");
 		else {
 			scale = get_ulong(n);
@@ -867,7 +863,7 @@ load_array(void)
 		if (inumber == NULL)
 			return;
 		index = get_ulong(inumber);
-		if (BN_cmp(inumber->number, &zero) < 0)
+		if (BN_is_negative(inumber->number))
 			warnx("negative index");
 		else if (index == BN_MASK2 || index > MAX_ARRAY_INDEX)
 			warnx("index too big");
@@ -906,7 +902,7 @@ store_array(void)
 			return;
 		}
 		index = get_ulong(inumber);
-		if (BN_cmp(inumber->number, &zero) < 0) {
+		if (BN_is_negative(inumber->number)) {
 			warnx("negative index");
 			stack_free_value(value);
 		} else if (index == BN_MASK2 || index > MAX_ARRAY_INDEX) {
@@ -1290,7 +1286,7 @@ bsqrt(void)
 	if (BN_is_zero(n->number)) {
 		r = new_number();
 		push_number(r);
-	} else if (BN_cmp(n->number, &zero) < 0)
+	} else if (BN_is_negative(n->number))
 		warnx("square root of negative number");
 	else {
 		scale = max(bmachine.scale, n->scale);

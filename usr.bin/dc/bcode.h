@@ -97,5 +97,3 @@ void			negate(struct number *);
 void			split_number(const struct number *, BIGNUM *, BIGNUM *);
 void			bmul_number(struct number *, struct number *,
 			    struct number *);
-
-extern BIGNUM		zero;
