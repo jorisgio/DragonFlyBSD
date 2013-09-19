@@ -820,7 +820,7 @@ load_stack(void)
 {
 	int		index;
 	struct stack	*stack;
-	struct value	*value, copy;
+	struct value	*value;
 
 	index = readreg();
 	if (index >= 0) {
@@ -830,7 +830,7 @@ load_stack(void)
 			value = stack_pop(stack);
 		}
 		if (value != NULL)
-			push(stack_dup_value(value, &copy));
+			push(value);
 		else
 			warnx("stack register '%c' (0%o) is empty",
 			    index, index);
@@ -1548,6 +1548,7 @@ quitN(void)
 	if (n == NULL)
 		return;
 	i = get_ulong(n);
+	free_number(n);
 	if (i == BN_MASK2 || i == 0)
 		warnx("Q command requires a number >= 1");
 	else if (bmachine.readsp < i)

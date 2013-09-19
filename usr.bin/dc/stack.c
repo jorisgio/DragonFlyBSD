@@ -307,8 +307,10 @@ array_grow(struct array *array, size_t newsize)
 	size_t i;
 
 	array->data = brealloc(array->data, newsize * sizeof(*array->data));
-	for (i = array->size; i < newsize; i++)
+	for (i = array->size; i < newsize; i++) {
+		array->data[i].type = BCODE_NONE;
 		array->data[i].array = NULL;
+	}
 	array->size = newsize;
 }
 
@@ -317,6 +319,7 @@ array_assign(struct array *array, size_t index, const struct value *v)
 {
 	if (index >= array->size)
 		array_grow(array, index+1);
+	stack_free_value(&array->data[index]);
 	array->data[index] = *v;
 }
 
