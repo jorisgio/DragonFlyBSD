@@ -577,8 +577,8 @@ set_scale(void)
 			warnx("scale must be a nonnegative number");
 		else {
 			scale = get_ulong(n);
-			if (scale != BN_MASK2)
-				bmachine.scale = scale;
+			if (scale != BN_MASK2 && scale <= UINT_MAX)
+				bmachine.scale = (u_int)scale;
 			else
 				warnx("scale too large");
 			}
@@ -605,8 +605,8 @@ set_obase(void)
 	n = pop_number();
 	if (n != NULL) {
 		base = get_ulong(n);
-		if (base != BN_MASK2 && base > 1)
-			bmachine.obase = base;
+		if (base != BN_MASK2 && base > 1 && base <= UINT_MAX)
+			bmachine.obase = (u_int)base;
 		else
 			warnx("output base must be a number greater than 1");
 		free_number(n);
@@ -633,7 +633,7 @@ set_ibase(void)
 	if (n != NULL) {
 		base = get_ulong(n);
 		if (base != BN_MASK2 && 2 <= base && base <= 16)
-			bmachine.ibase = base;
+			bmachine.ibase = (u_int)base;
 		else
 			warnx("input base must be a number between 2 and 16 "
 			    "(inclusive)");
@@ -707,7 +707,7 @@ static void
 num_digits(void)
 {
 	struct value	*value;
-	u_int		digits;
+	size_t		digits;
 	struct number	*n = NULL;
 
 	value = pop();
@@ -1204,8 +1204,9 @@ bexp(void)
 
 		b = BN_get_word(p->number);
 		m = max(a->scale, bmachine.scale);
-		rscale = a->scale * b;
-		if (rscale > m || b == BN_MASK2)
+		rscale = a->scale * (u_int)b;
+		if (rscale > m || (a->scale > 0 && (b == BN_MASK2 ||
+		    b > UINT_MAX)))
 			rscale = m;
 	}
 
