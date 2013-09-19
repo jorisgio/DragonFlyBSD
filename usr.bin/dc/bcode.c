@@ -237,7 +237,7 @@ init_bmachine(bool extended_registers)
 	bmachine.reg_array_size = bmachine.extended_regs ?
 	    REG_ARRAY_SIZE_BIG : REG_ARRAY_SIZE_SMALL;
 
-	bmachine.reg = malloc(bmachine.reg_array_size *
+	bmachine.reg = calloc(bmachine.reg_array_size,
 	    sizeof(bmachine.reg[0]));
 	if (bmachine.reg == NULL)
 		err(1, NULL);
@@ -253,7 +253,7 @@ init_bmachine(bool extended_registers)
 		stack_init(&bmachine.reg[i]);
 
 	bmachine.readstack_sz = READSTACK_SIZE;
-	bmachine.readstack = malloc(sizeof(struct source) *
+	bmachine.readstack = calloc(sizeof(struct source),
 	    bmachine.readstack_sz);
 	if (bmachine.readstack == NULL)
 		err(1, NULL);
