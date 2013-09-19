@@ -61,8 +61,8 @@ struct array {
 
 struct stack {
 	struct value	*stack;
-	int		sp;
-	int		size;
+	ssize_t		sp;
+	size_t		size;
 };
 
 struct source;

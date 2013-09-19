@@ -642,7 +642,7 @@ set_ibase(void)
 static void
 stackdepth(void)
 {
-	u_int i;
+	size_t i;
 	struct number *n;
 
 	i = stack_size(&bmachine.stack);
@@ -1728,7 +1728,7 @@ eval(void)
 		fprintf(stderr, "# %c\n", ch);
 		stack_print(stderr, &bmachine.stack, "* ",
 		    bmachine.obase);
-		fprintf(stderr, "%d =>\n", bmachine.readsp);
+		fprintf(stderr, "%zd =>\n", bmachine.readsp);
 #endif
 
 		if (0 <= ch && ch < UCHAR_MAX)
@@ -1739,7 +1739,7 @@ eval(void)
 #ifdef DEBUGGING
 		stack_print(stderr, &bmachine.stack, "* ",
 		    bmachine.obase);
-		fprintf(stderr, "%d ==\n", bmachine.readsp);
+		fprintf(stderr, "%zd ==\n", bmachine.readsp);
 #endif
 	}
 }
