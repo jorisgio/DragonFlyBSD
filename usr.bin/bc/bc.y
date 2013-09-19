@@ -1061,7 +1061,7 @@ static void
 sigchld(int signo)
 {
 	pid_t pid;
-	int status;
+	int status, save_errno = errno;
 
 	for (;;) {
 		pid = waitpid(dc, &status, WCONTINUED);
@@ -1075,6 +1075,7 @@ sigchld(int signo)
 		else
 			break;
 	}
+	errno = save_errno;
 }
 
 static const char *
