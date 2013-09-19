@@ -1687,6 +1687,7 @@ eval_line(void)
 	struct source	in;
 	char		*p;
 
+	clearerr(stdin)
 	src_setstream(&in, stdin);
 	p = (*in.vtable->readline)(&in);
 	eval_string(p);
