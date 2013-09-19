@@ -29,6 +29,7 @@ int		yylex(void);
 void		yyerror(char *);
 void		fatal(const char *);
 void		abort_line(int);
+unsigned char	bc_eof(EditLine *, int);
 
 extern int	lineno;
 extern char	*yytext;

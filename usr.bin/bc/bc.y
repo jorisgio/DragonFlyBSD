@@ -1157,6 +1157,8 @@ main(int argc, char *argv[])
 		el_set(el, EL_SIGNAL, 1);
 		el_set(el, EL_SIGNAL, 0);
 		el_set(el, EL_PROMPT, dummy_prompt);
+		el_set(el, EL_ADDFN, "bc_eof", "", bc_eof);
+		el_set(el, EL_BIND, "^D", "bc_eof", NULL);
 		el_source(el, NULL);
 	}
 	yywrap();

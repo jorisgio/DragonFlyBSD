@@ -257,6 +257,23 @@ abort_line(int sig)
 	errno = save_errno;
 }
 
+/*
+ * Avoid the echo of ^D by the default code of editline and take
+ * into account skipchars to make ^D work when the cursor is at start of
+ * line after a ^C.
+ */
+unsigned char
+bc_eof(EditLine *e, int ch)
+{
+	const struct lineinfo *info = el_line(e);
+
+	if (info->buffer + skipchars == info->cursor &&
+	    info->cursor == info->lastchar)
+		return (CC_EOF);
+	else
+		return (CC_ERROR);
+}
+
 int
 yywrap(void)
 {
